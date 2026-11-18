@@ -54,6 +54,7 @@ export function newState() {
     sampleT: 0, lastAction: null, lastRivalShot: -9, readLabel: null, roundWinner: null, paused: false,
     feel: createFeel(),
     roundStats: { dashedLeft: false, farShot: false },
+    stats: { reads: 0, readsBeaten: 0 }, activeRead: null, outplayed: null, readSeq: 0,
     ui: { welcome: welcomeLine(save), challenge: challengeLine(save), report: null, matchLine: null },
   };
 }
@@ -85,6 +86,8 @@ function startRound(s, input) {
     input.aimTouch = null; input.stick = null; input.releaseAim = null; input.mouseDown = false;
   }
   s.killTimer = null;
+  if (s.round === 0) s.stats = { reads: 0, readsBeaten: 0 };
+  s.activeRead = null; s.outplayed = null;
   s.round += 1;
   s.time = 0; s.sampleT = 0; s.bullets = []; s.readLabel = null; s.lastRivalShot = -9;
   s.player = fighter(240, C.arenaH / 2);
@@ -114,7 +117,9 @@ function tuningFor(round) {
 function fire(s, who, tx, ty, owner, speed = C.bulletSpeed) {
   const dx = tx - who.x, dy = ty - who.y;
   const l = Math.hypot(dx, dy) || 1;
-  s.bullets.push({ x: who.x + dx / l * (C.radius + 6), y: who.y + dy / l * (C.radius + 6), vx: dx / l * speed, vy: dy / l * speed, owner });
+  const b = { x: who.x + dx / l * (C.radius + 6), y: who.y + dy / l * (C.radius + 6), vx: dx / l * speed, vy: dy / l * speed, owner };
+  s.bullets.push(b);
+  return b;
 }
 
 function moveFighter(f, mx, my, dt) {
@@ -182,12 +187,17 @@ function updateRival(s, dt) {
     round: s.round, time: s.time, foeCtx: playerCtx(s), bullets: s.bullets, rivalBulletSpeed: s.tuning.bulletSpeed,
   };
   const it = think(s.brain, view, s.model, dt);
-  if (it.read) { s.readLabel = { text: it.read.label, t: 0, kind: it.read.kind, at: it.read.fireAt }; beep(880); }
+  if (it.read) { s.readLabel = { text: it.read.label, t: 0, kind: it.read.kind, at: it.read.fireAt }; s.stats.reads += 1; beep(880); }
   if (it.readShot) beep(440, 0.12);
   if (it.dash && startDash(r, it.dash.x, it.dash.y)) shake(s.feel, 2);
-  if (it.readShot) { fire(s, r, it.readShot.x, it.readShot.y, 'rival', s.tuning.bulletSpeed); s.lastRivalShot = s.time; }
+  if (it.readShot) {
+    s.activeRead = { id: ++s.readSeq, firedAt: s.time, hit: false };
+    fire(s, r, it.readShot.x, it.readShot.y, 'rival', s.tuning.bulletSpeed).readId = s.activeRead.id;
+    s.lastRivalShot = s.time;
+  }
   if (it.fire && (r.fireCd <= 0 || it.readShot)) {
-    fire(s, r, it.aimX, it.aimY, 'rival', s.tuning.bulletSpeed);
+    const b = fire(s, r, it.aimX, it.aimY, 'rival', s.tuning.bulletSpeed);
+    if (it.readShot) b.readId = s.activeRead.id;
     r.fireCd = s.tuning.fireCd;
     s.lastRivalShot = s.time;
   }
@@ -203,6 +213,26 @@ function hit(s, target, color) {
   if (target.hp <= 0) slowMo(s.feel, 0.6, 0.25);
 }
 
+// A read is beaten when every bullet of the read shot is gone and none of them hit.
+function resolveRead(s) {
+  const r = s.activeRead;
+  if (!r) return;
+  if (r.hit) { s.activeRead = null; return; }
+  const flying = s.bullets.some(b => b.readId === r.id);
+  if (flying && s.time - r.firedAt < 2) return;
+  s.activeRead = null;
+  s.stats.readsBeaten += 1;
+  s.outplayed = { t: 0 };
+  s.brain.sinceRead = -2; // the rival needs a moment after being outplayed
+  slowMo(s.feel, 0.3, 0.35);
+  shake(s.feel, 4);
+  const dx = s.rival.x - s.player.x, dy = s.rival.y - s.player.y, l = Math.hypot(dx, dy) || 1;
+  s.rival.x = Math.max(C.radius, Math.min(C.arenaW - C.radius, s.rival.x + dx / l * 18));
+  s.rival.y = Math.max(C.radius, Math.min(C.arenaH - C.radius, s.rival.y + dy / l * 18));
+  s.rival.hitFlash = 0.1;
+  beep(660, 0.08); setTimeout(() => beep(990, 0.12), 90);
+}
+
 function updateBullets(s, dt) {
   const keep = [];
   for (const b of s.bullets) {
@@ -214,6 +244,7 @@ function updateBullets(s, dt) {
     }
     const target = b.owner === 'player' ? s.rival : s.player;
     if (target.dashT <= 0 && Math.hypot(b.x - target.x, b.y - target.y) < C.radius + C.bulletRadius) {
+      if (b.readId && s.activeRead?.id === b.readId) s.activeRead.hit = true;
       hit(s, target, color);
       continue;
     }
@@ -236,6 +267,7 @@ function endRound(s) {
   s.ui.report = {
     habits: topHabits(s.model, 3).map(h => `${h.text}   ${h.p}%`),
     predictability: `Predictability ${pred}%`,
+    readsLine: `Reads beaten: ${s.stats.readsBeaten}/${s.stats.reads}`,
     challengeJustDone,
   };
   decay(s.model);
@@ -260,6 +292,8 @@ export function step(s, input, dt) {
     updatePlayer(s, input, dt);
     updateRival(s, dt);
     updateBullets(s, dt);
+    resolveRead(s);
+    if (s.outplayed && (s.outplayed.t += dt) > 1.2) s.outplayed = null;
     if (s.player.hp <= 0 || s.rival.hp <= 0) {
       // Let the killing blow play out in slow motion before the round ends.
       s.killTimer ??= 0.15;
@@ -325,6 +359,21 @@ function drawReadTarget(ctx, s) {
   ctx.restore();
 }
 
+function drawOutplayed(ctx, s) {
+  const o = s.outplayed;
+  if (!o) return;
+  const pop = Math.min(1, o.t / 0.08);
+  ctx.save();
+  const x = Math.max(150, Math.min(C.arenaW - 150, s.player.x));
+  const y = Math.max(90, s.player.y - 70);
+  ctx.translate(x, y);
+  ctx.scale(1.4 - 0.4 * pop, 1.4 - 0.4 * pop);
+  ctx.globalAlpha = o.t > 0.9 ? Math.max(0, 1 - (o.t - 0.9) / 0.3) : 1;
+  text(ctx, 'OUTPLAYED', 0, -14, 40, COLORS.player, 'center', 900);
+  text(ctx, `Reads beaten ${s.stats.readsBeaten}/${s.stats.reads}`, 0, 20, 14, COLORS.text, 'center', 600);
+  ctx.restore();
+}
+
 function drawRead(ctx, s) {
   const r = s.readLabel;
   if (!r || r.t > 1.2) return;
@@ -375,6 +424,7 @@ function render(ctx, s, input) {
   drawFeel(s.feel, ctx, C.arenaW, C.arenaH);
   ctx.restore();
   drawRead(ctx, s);
+  drawOutplayed(ctx, s);
   drawHud(ctx, s);
   drawSticks(ctx, input);
   if (s.phase === 'roundEnd') {
@@ -391,7 +441,7 @@ function render(ctx, s, input) {
       rep.habits.forEach((h, i) => text(ctx, h, C.arenaW / 2, 210 + i * 36, 20, COLORS.read, 'center', 600));
       if (!rep.habits.length) text(ctx, 'Not enough data yet', C.arenaW / 2, 210, 20, COLORS.quiet, 'center', 400);
       text(ctx, rep.predictability, C.arenaW / 2, 340, 26, COLORS.rival, 'center', 800);
-      text(ctx, `Score ${s.score.player} - ${s.score.rival}`, C.arenaW / 2, 380, 16, COLORS.quiet, 'center', 400);
+      text(ctx, `${rep.readsLine}   ·   Score ${s.score.player} - ${s.score.rival}`, C.arenaW / 2, 380, 16, COLORS.quiet, 'center', 400);
       if (rep.challengeJustDone) text(ctx, 'Daily challenge complete!', C.arenaW / 2, 412, 16, COLORS.player, 'center', 700);
       text(ctx, `${tap} to continue`, C.arenaW / 2, 470, 18, COLORS.text);
     } else {
@@ -399,7 +449,7 @@ function render(ctx, s, input) {
       text(ctx, won ? 'MATCH WON' : s.score.player === s.score.rival ? 'MATCH DRAWN' : 'MATCH LOST', C.arenaW / 2, 150, 44, COLORS.text, 'center', 800);
       text(ctx, `${s.score.player} - ${s.score.rival}`, C.arenaW / 2, 200, 22, COLORS.quiet, 'center', 600);
       text(ctx, s.ui.matchLine ?? '', C.arenaW / 2, 270, 20, COLORS.rival, 'center', 600);
-      text(ctx, `Rival level ${s.save.rivalLevel}`, C.arenaW / 2, 320, 16, COLORS.quiet, 'center', 400);
+      text(ctx, `Rival level ${s.save.rivalLevel}   ·   Reads beaten ${s.stats.readsBeaten}/${s.stats.reads}`, C.arenaW / 2, 320, 16, COLORS.quiet, 'center', 400);
       text(ctx, "I'll study this tonight. Come back tomorrow.", C.arenaW / 2, 352, 16, COLORS.quiet, 'center', 400);
       text(ctx, `${tap} to play again`, C.arenaW / 2, 440, 18, COLORS.read);
     }

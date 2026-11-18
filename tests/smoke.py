@@ -196,6 +196,12 @@ def returning_player(browser, url, errors):
     assert label.startswith("READ: "), label
     page.wait_for_timeout(120)
     page.screenshot(path=os.path.join(OUT, "read.png"))
+    # beat the read: clear its bullets as if dodged, then the OUTPLAYED pop shows
+    page.wait_for_function("window.__habit.state.activeRead !== null", timeout=3000)
+    page.evaluate("(() => { const s = window.__habit.state; s.bullets = s.bullets.filter(b => !b.readId); })()")
+    page.wait_for_function("window.__habit.state.outplayed !== null", timeout=2000)
+    page.wait_for_timeout(150)
+    page.screenshot(path=os.path.join(OUT, "outplayed.png"))
 
 
 def main():
