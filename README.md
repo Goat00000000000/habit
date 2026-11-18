@@ -29,7 +29,7 @@ The rival watches what you do: where you dodge when shot at, which way you move,
 - **Level 1 is the confidence level.** I wanted about 90% of new players to win it so nobody quits in the first minute. My first build was far too hard: a simulated new player won only 4% of level 1. I added a per-level difficulty curve and tuned level 1 to about 90%.
 - **Endless levels instead of best of 5.** In playtesting I won every match, because best of 5 ended before the hard rounds. A level ladder lets good players reach the real difficulty.
 - **Harder by reading, not by aiming.** Past level 5 the rival never aims better. It gets tougher (more HP, more dodges) and smarter: it reads more often and commits on less evidence. An aimbot feels unfair. A rival that knows you feels personal.
-- **Reads must actually happen.** In my own playtests the rival read me only twice in 7 levels, so reviewers would never see the core mechanic. I measured why (the rival only tried a read when its gun was ready, and was rarely confident against a player who mixes it up), then added momentum reads and honest GUESSes. A skilled-style player now sees a READ or GUESS about every 3 seconds.
+- **Reads must actually happen.** In my own playtests the rival read me only twice in 7 levels, so reviewers would never see the core mechanic. I measured why (the rival only tried a read when its gun was ready, and was rarely confident against a player who mixes it up), then added momentum reads and honest GUESSes. A skilled-style player now sees a READ or GUESS about every 4 seconds, up from every 6.
 - **Fair reads.** Every read is telegraphed 0.3 s early with text and a target ring, and beating one is rewarded with OUTPLAYED.
 
 ## How I used AI

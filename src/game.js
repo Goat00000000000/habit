@@ -5,9 +5,11 @@ import { loadSave, writeSave, welcomeLine } from './save.js';
 import { createBrain, think, readInterval } from './rival.js';
 import { clampDt, distBand, dir8 } from './util.js';
 import { PILLARS, pushOut, inPillar, segmentBlocked, nearCover } from './arena.js';
-import { createFeel, hitStop, slowMo, shake, flash, burst, ghost, updateFeel, cameraOffset, drawFeel } from './feel.js';
+import { createFeel, hitStop, slowMo, shake, flash, burst, ghost, updateFeel } from './feel.js';
+import { render, INK } from './ink.js';
 
-const COLORS = { bg: '#0d0f14', wall: '#2a3040', player: '#4fd1ff', rival: '#ff6b4a', text: '#e8ecf4', quiet: '#8a93a6', read: '#ffd84a' };
+// Effect colours: black ink for the player, seal red for the rival (see ink.js).
+const COLORS = { player: INK.ink, rival: INK.red };
 
 // ---------- input ----------
 export function createInput() {
@@ -353,153 +355,6 @@ export function step(s, input, dt) {
     if (click && s.phaseT > 0.5) { s.round = 0; startRun(s, input); }
   }
   input.dashPressed = false;
-}
-
-// ---------- rendering ----------
-function text(ctx, str, x, y, size, color = COLORS.text, align = 'center', weight = 600) {
-  ctx.font = `${weight} ${size}px system-ui, sans-serif`;
-  ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'middle';
-  ctx.fillText(str, x, y);
-}
-
-function drawFighter(ctx, f, color) {
-  ctx.globalAlpha = f.dashT > 0 ? 0.5 : 1;
-  ctx.fillStyle = f.hitFlash > 0 ? '#ffffff' : color;
-  ctx.beginPath(); ctx.arc(f.x, f.y, C.radius, 0, Math.PI * 2); ctx.fill();
-  ctx.globalAlpha = 1;
-  const a = Math.atan2(f.aimY - f.y, f.aimX - f.x);
-  ctx.strokeStyle = color; ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.moveTo(f.x + Math.cos(a) * C.radius, f.y + Math.sin(a) * C.radius);
-  ctx.lineTo(f.x + Math.cos(a) * (C.radius + 10), f.y + Math.sin(a) * (C.radius + 10)); ctx.stroke();
-}
-
-function drawHud(ctx, s) {
-  for (let i = 0; i < C.hp; i++) {
-    ctx.fillStyle = i < s.player.hp ? COLORS.player : COLORS.wall;
-    ctx.fillRect(24 + i * 22, 20, 16, 8);
-  }
-  for (let i = 0; i < (s.rival.maxHp ?? C.hp); i++) {
-    ctx.fillStyle = i < s.rival.hp ? COLORS.rival : COLORS.wall;
-    ctx.fillRect(C.arenaW - 40 - i * 22, 20, 16, 8);
-  }
-  text(ctx, `LEVEL ${s.round}`, C.arenaW / 2, 24, 16, COLORS.text);
-  text(ctx, `Best ${s.save.bestLevel}`, C.arenaW / 2 + 90, 24, 13, COLORS.quiet, 'left', 400);
-  text(ctx, `${Math.max(0, Math.ceil(C.roundTime - s.time))}`, C.arenaW / 2, 48, 14, COLORS.quiet);
-}
-
-function drawReadTarget(ctx, s) {
-  const r = s.readLabel;
-  if (!r || !r.at || r.t > 0.6) return;
-  ctx.save();
-  ctx.globalAlpha = r.t < 0.3 ? 0.9 : Math.max(0, 1 - (r.t - 0.3) / 0.3);
-  ctx.strokeStyle = COLORS.read; ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
-  ctx.beginPath(); ctx.arc(r.at.x, r.at.y, C.radius + 6, 0, Math.PI * 2); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(s.player.x, s.player.y); ctx.lineTo(r.at.x, r.at.y); ctx.stroke();
-  ctx.restore();
-}
-
-function drawOutplayed(ctx, s) {
-  const o = s.outplayed;
-  if (!o) return;
-  const pop = Math.min(1, o.t / 0.08);
-  ctx.save();
-  const x = Math.max(150, Math.min(C.arenaW - 150, s.player.x));
-  const y = Math.max(90, s.player.y - 70);
-  ctx.translate(x, y);
-  ctx.scale(1.4 - 0.4 * pop, 1.4 - 0.4 * pop);
-  ctx.globalAlpha = o.t > 0.9 ? Math.max(0, 1 - (o.t - 0.9) / 0.3) : 1;
-  text(ctx, o.text, 0, -14, o.text === 'OUTPLAYED' ? 40 : 34, COLORS.player, 'center', 900);
-  const sub = o.text === 'OUTPLAYED' ? `Reads beaten ${s.stats.readsBeaten}/${s.stats.reads}` : "It couldn't read you";
-  text(ctx, sub, 0, 20, 14, COLORS.text, 'center', 600);
-  ctx.restore();
-}
-
-function drawRead(ctx, s) {
-  const r = s.readLabel;
-  if (!r || r.t > 1.2) return;
-  const pop = Math.min(1, r.t / 0.1);
-  ctx.save();
-  // Above the rival, or below it when it hugs the top edge, and never off the sides.
-  const lx = Math.max(110, Math.min(C.arenaW - 110, s.rival.x));
-  ctx.translate(lx, s.rival.y < 80 ? s.rival.y + 44 : s.rival.y - 44);
-  ctx.scale(0.6 + 0.4 * pop, 0.6 + 0.4 * pop);
-  ctx.globalAlpha = r.t > 0.9 ? Math.max(0, 1 - (r.t - 0.9) / 0.3) : 1;
-  text(ctx, r.text, 0, 0, 18, r.kind === 'guess' ? COLORS.quiet : COLORS.read, 'center', 800);
-  ctx.restore();
-}
-
-function drawSticks(ctx, input) {
-  if (!input.touch) return;
-  ctx.strokeStyle = 'rgba(232,236,244,0.25)'; ctx.lineWidth = 2;
-  const st = input.stick;
-  if (st) {
-    ctx.beginPath(); ctx.arc(st.ox, st.oy, 50, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = 'rgba(232,236,244,0.25)';
-    ctx.beginPath(); ctx.arc(st.x, st.y, 18, 0, Math.PI * 2); ctx.fill();
-  }
-}
-
-function render(ctx, s, input) {
-  ctx.fillStyle = COLORS.bg; ctx.fillRect(0, 0, C.arenaW, C.arenaH);
-  ctx.strokeStyle = COLORS.wall; ctx.lineWidth = 2; ctx.strokeRect(1, 1, C.arenaW - 2, C.arenaH - 2);
-  if (s.phase === 'title') {
-    text(ctx, 'HABIT', C.arenaW / 2, 190, 72, COLORS.text, 'center', 800);
-    text(ctx, 'A rival that learns how you fight.', C.arenaW / 2, 250, 20, COLORS.quiet, 'center', 400);
-    if (s.ui.welcome) text(ctx, s.ui.welcome, C.arenaW / 2, 300, 17, COLORS.rival, 'center', 600);
-    const best = s.save.bestLevel ? `Best: Level ${s.save.bestLevel}` : '';
-    const from = s.save.checkpoint > 1 ? `   ·   Starting at checkpoint Level ${s.save.checkpoint}` : '';
-    if (best || from) text(ctx, best + from, C.arenaW / 2, 326, 14, COLORS.quiet, 'center', 400);
-    text(ctx, input.touch ? 'Tap to start' : 'Click to start', C.arenaW / 2, 372, 22, COLORS.read);
-    text(ctx, s.ui.challenge, C.arenaW / 2, 412, 15, COLORS.text, 'center', 400);
-    text(ctx, input.touch ? 'Left thumb move · right thumb drag to aim, release to shoot · quick swipe to dash'
-      : 'WASD move · mouse aim · click shoot · Space dash', C.arenaW / 2, 470, 15, COLORS.quiet, 'center', 400);
-    return;
-  }
-  const cam = cameraOffset(s.feel);
-  ctx.save();
-  ctx.translate(cam.x, cam.y);
-  ctx.fillStyle = '#242c3d'; ctx.strokeStyle = '#3a4459'; ctx.lineWidth = 2;
-  for (const p of PILLARS) { ctx.fillRect(p.x, p.y, p.w, p.h); ctx.strokeRect(p.x, p.y, p.w, p.h); }
-  for (const b of s.bullets) {
-    ctx.fillStyle = b.owner === 'player' ? COLORS.player : COLORS.rival;
-    ctx.beginPath(); ctx.arc(b.x, b.y, C.bulletRadius, 0, Math.PI * 2); ctx.fill();
-  }
-  drawFighter(ctx, s.player, COLORS.player);
-  drawFighter(ctx, s.rival, COLORS.rival);
-  drawReadTarget(ctx, s);
-  drawFeel(s.feel, ctx, C.arenaW, C.arenaH);
-  ctx.restore();
-  drawRead(ctx, s);
-  drawOutplayed(ctx, s);
-  drawHud(ctx, s);
-  drawSticks(ctx, input);
-  if (s.phase === 'roundEnd') {
-    const msg = s.roundWinner === 'player' ? `LEVEL ${s.round} CLEAR` : s.roundWinner === 'rival' ? 'DEFEATED' : 'DRAW: TRY AGAIN';
-    text(ctx, msg, C.arenaW / 2, C.arenaH / 2, 48, COLORS.text, 'center', 800);
-  }
-  if (s.phase === 'report' || s.phase === 'runOver') {
-    ctx.fillStyle = 'rgba(13,15,20,0.92)'; ctx.fillRect(0, 0, C.arenaW, C.arenaH);
-    const tap = input.touch ? 'Tap' : 'Click';
-    if (s.phase === 'report') {
-      const rep = s.ui.report;
-      text(ctx, 'HABIT REPORT', C.arenaW / 2, 110, 34, COLORS.text, 'center', 800);
-      text(ctx, 'What your rival learned about you', C.arenaW / 2, 146, 15, COLORS.quiet, 'center', 400);
-      rep.habits.forEach((h, i) => text(ctx, h, C.arenaW / 2, 210 + i * 36, 20, COLORS.read, 'center', 600));
-      if (!rep.habits.length) text(ctx, 'Not enough data yet', C.arenaW / 2, 210, 20, COLORS.quiet, 'center', 400);
-      text(ctx, rep.predictability, C.arenaW / 2, 340, 26, COLORS.rival, 'center', 800);
-      text(ctx, `${rep.readsLine}   ·   ${rep.guessLine}   ·   Level ${s.round}`, C.arenaW / 2, 380, 16, COLORS.quiet, 'center', 400);
-      if (rep.challengeJustDone) text(ctx, 'Daily challenge complete!', C.arenaW / 2, 412, 16, COLORS.player, 'center', 700);
-      const next = s.roundWinner === 'player' ? `Next: Level ${s.round + 1}` : s.roundWinner === 'draw' ? `Replay Level ${s.round}` : 'Run over';
-      text(ctx, `${tap} to continue   ·   ${next}`, C.arenaW / 2, 470, 18, COLORS.text);
-    } else {
-      text(ctx, 'RUN OVER', C.arenaW / 2, 140, 44, COLORS.text, 'center', 800);
-      text(ctx, `You reached Level ${s.ui.runLevel}   ·   Best Level ${s.save.bestLevel}`, C.arenaW / 2, 192, 20, COLORS.quiet, 'center', 600);
-      text(ctx, s.ui.matchLine ?? '', C.arenaW / 2, 270, 20, COLORS.rival, 'center', 600);
-      text(ctx, `This run: reads beaten ${s.stats.readsBeaten}/${s.stats.reads}   ·   guesses dodged ${s.stats.guessesBeaten}/${s.stats.guesses}`, C.arenaW / 2, 320, 16, COLORS.quiet, 'center', 400);
-      text(ctx, "I'll study this tonight. Come back tomorrow.", C.arenaW / 2, 352, 16, COLORS.quiet, 'center', 400);
-      text(ctx, `${tap} to try again from Level ${s.save.checkpoint}`, C.arenaW / 2, 440, 18, COLORS.read);
-    }
-  }
 }
 
 // ---------- boot ----------

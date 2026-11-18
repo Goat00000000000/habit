@@ -29,10 +29,10 @@ test('shake moves the camera and fades to zero', () => {
   assert.equal(Math.hypot(z.x, z.y), 0);
 });
 
-test('particles expire', () => {
+test('splatter and ink stains expire within 3 s', () => {
   const f = createFeel();
   burst(f, 100, 100, '#fff', 12);
-  assert.equal(f.particles.length, 12);
-  for (let i = 0; i < 100; i++) updateFeel(f, 0.016);
+  assert.equal(f.particles.length, 12 + 3); // 12 droplets + 3 stains
+  for (let i = 0; i < 190; i++) updateFeel(f, 0.016);
   assert.equal(f.particles.length, 0);
 });

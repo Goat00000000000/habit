@@ -5,16 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Habit</title>
   <link rel="icon" href="data:,">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;600&family=Yuji+Syuku&display=swap" rel="stylesheet">
   <style>
-    html, body { margin: 0; height: 100%; background: #0d0f14; overflow: hidden; touch-action: none; }
+    html, body { margin: 0; height: 100%; background: #cfcabd; overflow: hidden; touch-action: none; }
     canvas { display: block; margin: 0 auto; }
-    #rotate { display: none; position: fixed; inset: 0; background: #0d0f14; color: #e8ecf4;
-      font: 600 22px system-ui, sans-serif; align-items: center; justify-content: center; text-align: center; padding: 24px; }
+    #rotate { display: none; position: fixed; inset: 0; background: #e4e1d8; color: #16130f;
+      font: 400 24px "Yuji Syuku", "Shippori Mincho", serif; align-items: center; justify-content: center; text-align: center; padding: 24px; }
   </style>
 </head>
 <body>
   <canvas id="game"></canvas>
-  <div id="rotate">Rotate your phone to play</div>
+  <div id="rotate">Turn your phone sideways to play</div>
   <script type="module">
     import { start } from './src/game.js';
     start(document.getElementById('game'));
