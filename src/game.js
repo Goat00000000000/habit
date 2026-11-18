@@ -1,7 +1,7 @@
 // Habit: game loop, input, simulation, screens, rendering.
 import { CONFIG as C } from './config.js';
-import { record, decay } from './habit.js';
-import { loadSave, writeSave } from './save.js';
+import { record, decay, topHabits, predictability } from './habit.js';
+import { loadSave, writeSave, welcomeLine } from './save.js';
 import { createBrain, think } from './rival.js';
 import { clampDt, distBand, dir8 } from './util.js';
 import { createFeel, hitStop, slowMo, shake, flash, burst, ghost, updateFeel, cameraOffset, drawFeel } from './feel.js';
@@ -53,7 +53,29 @@ function newState() {
     bullets: [], save, model: save.model, brain: null,
     sampleT: 0, lastAction: null, lastRivalShot: -9, readLabel: null, roundWinner: null, paused: false,
     feel: createFeel(),
+    roundStats: { dashedLeft: false, farShot: false },
+    ui: { welcome: welcomeLine(save), challenge: challengeLine(save), report: null, matchLine: null },
   };
+}
+
+function challengeLine(save) {
+  return `Today: ${save.challenge.text}${save.challengeDone ? '  (done)' : ''}`;
+}
+
+// ---------- audio: one short beep for reads ----------
+let audio = null;
+function unlockAudio() {
+  try { audio ??= new (window.AudioContext || window.webkitAudioContext)(); audio.resume?.(); } catch { audio = null; }
+}
+function beep(freq = 880, len = 0.08) {
+  if (!audio) return;
+  try {
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = 'square'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.06, audio.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + len);
+    o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + len);
+  } catch { /* no sound is fine */ }
 }
 
 function startRound(s) {
@@ -62,6 +84,7 @@ function startRound(s) {
   s.player = fighter(240, C.arenaH / 2);
   s.rival = fighter(C.arenaW - 240, C.arenaH / 2);
   s.brain = createBrain(s.save.rivalLevel, s.save.bonusReads);
+  s.roundStats = { dashedLeft: false, farShot: false };
   s.phase = 'round'; s.phaseT = 0;
 }
 
@@ -115,12 +138,18 @@ function updatePlayer(s, input, dt) {
   } else { p.aimX = input.mouse.x; p.aimY = input.mouse.y; }
   const dash = input.dashDir ?? mv;
   input.dashDir = null;
-  if (input.dashPressed && startDash(p, dash.x, dash.y)) { logAction(s, `dash:${dir8(dash.x, dash.y)}`); shake(s.feel, 3); }
+  if (input.dashPressed && startDash(p, dash.x, dash.y)) {
+    const d = dir8(dash.x, dash.y);
+    if (d.includes('W')) s.roundStats.dashedLeft = true;
+    logAction(s, `dash:${d}`);
+    shake(s.feel, 3);
+  }
   const wantFire = input.mouseDown || input.fireOnce;
   input.fireOnce = false;
   if (wantFire && p.fireCd <= 0) {
     fire(s, p, p.aimX, p.aimY, 'player');
     p.fireCd = C.fireCooldown;
+    if (playerCtx(s).dist === 'far') s.roundStats.farShot = true;
     logAction(s, 'shoot');
   }
   moveFighter(p, mv.x, mv.y, dt);
@@ -140,7 +169,8 @@ function updateRival(s, dt) {
     round: s.round, time: s.time, foeCtx: playerCtx(s), bullets: s.bullets,
   };
   const it = think(s.brain, view, s.model, dt);
-  if (it.read) s.readLabel = { text: it.read.label, t: 0, kind: it.read.kind };
+  if (it.read) { s.readLabel = { text: it.read.label, t: 0, kind: it.read.kind, at: it.read.fireAt }; beep(880); }
+  if (it.readShot) beep(440, 0.12);
   if (it.dash && startDash(r, it.dash.x, it.dash.y)) shake(s.feel, 2);
   if (it.readShot) { fire(s, r, it.readShot.x, it.readShot.y, 'rival'); s.lastRivalShot = s.time; }
   if (it.fire && (r.fireCd <= 0 || it.readShot)) {
@@ -183,6 +213,18 @@ function endRound(s) {
   const { player: p, rival: r } = s;
   s.roundWinner = p.hp > r.hp ? 'player' : r.hp > p.hp ? 'rival' : 'draw';
   if (s.roundWinner !== 'draw') s.score[s.roundWinner] += 1;
+  const pred = predictability(s.model);
+  let challengeJustDone = false;
+  if (s.roundWinner === 'player' && !s.save.challengeDone) {
+    const id = s.save.challenge.id;
+    const met = (id === 'lowPred' && pred < 50) || (id === 'noLeftDash' && !s.roundStats.dashedLeft) || (id === 'noFarShot' && !s.roundStats.farShot);
+    if (met) { s.save.challengeDone = true; challengeJustDone = true; s.ui.challenge = challengeLine(s.save); }
+  }
+  s.ui.report = {
+    habits: topHabits(s.model, 3).map(h => `${h.text}   ${h.p}%`),
+    predictability: `Predictability ${pred}%`,
+    challengeJustDone,
+  };
   decay(s.model);
   writeSave(safeStorage(), s.save);
   s.phase = 'roundEnd'; s.phaseT = 0;
@@ -211,6 +253,8 @@ function step(s, input, dt) {
     if (click || s.phaseT > 5) {
       if (matchOver(s)) {
         if (s.score.player > s.score.rival) s.save.rivalLevel += 1;
+        const [top] = topHabits(s.model, 1);
+        s.ui.matchLine = top ? `"${top.text}. ${top.p}% of the time. I noticed."` : '"You are hard to read. For now."';
         writeSave(safeStorage(), s.save);
         s.phase = 'matchEnd'; s.phaseT = 0;
       } else startRound(s);
@@ -250,6 +294,17 @@ function drawHud(ctx, s) {
   text(ctx, `${Math.max(0, Math.ceil(C.roundTime - s.time))}`, C.arenaW / 2, 48, 14, COLORS.quiet);
 }
 
+function drawReadTarget(ctx, s) {
+  const r = s.readLabel;
+  if (!r || !r.at || r.t > 0.6) return;
+  ctx.save();
+  ctx.globalAlpha = r.t < 0.3 ? 0.9 : Math.max(0, 1 - (r.t - 0.3) / 0.3);
+  ctx.strokeStyle = COLORS.read; ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
+  ctx.beginPath(); ctx.arc(r.at.x, r.at.y, C.radius + 6, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(s.player.x, s.player.y); ctx.lineTo(r.at.x, r.at.y); ctx.stroke();
+  ctx.restore();
+}
+
 function drawRead(ctx, s) {
   const r = s.readLabel;
   if (!r || r.t > 1.2) return;
@@ -279,7 +334,10 @@ function render(ctx, s, input) {
   if (s.phase === 'title') {
     text(ctx, 'HABIT', C.arenaW / 2, 190, 72, COLORS.text, 'center', 800);
     text(ctx, 'A rival that learns how you fight.', C.arenaW / 2, 250, 20, COLORS.quiet, 'center', 400);
-    text(ctx, input.touch ? 'Tap to start' : 'Click to start', C.arenaW / 2, 330, 22, COLORS.read);
+    if (s.ui.welcome) text(ctx, s.ui.welcome, C.arenaW / 2, 300, 17, COLORS.rival, 'center', 600);
+    if (s.save.rivalLevel > 1) text(ctx, `Rival level ${s.save.rivalLevel}`, C.arenaW / 2, 326, 14, COLORS.quiet, 'center', 400);
+    text(ctx, input.touch ? 'Tap to start' : 'Click to start', C.arenaW / 2, 372, 22, COLORS.read);
+    text(ctx, s.ui.challenge, C.arenaW / 2, 412, 15, COLORS.text, 'center', 400);
     text(ctx, input.touch ? 'Left thumb move · right thumb drag to aim, release to shoot · quick swipe to dash'
       : 'WASD move · mouse aim · click shoot · Space dash', C.arenaW / 2, 470, 15, COLORS.quiet, 'center', 400);
     return;
@@ -293,6 +351,7 @@ function render(ctx, s, input) {
   }
   drawFighter(ctx, s.player, COLORS.player);
   drawFighter(ctx, s.rival, COLORS.rival);
+  drawReadTarget(ctx, s);
   drawFeel(s.feel, ctx, C.arenaW, C.arenaH);
   ctx.restore();
   drawRead(ctx, s);
@@ -303,9 +362,27 @@ function render(ctx, s, input) {
     text(ctx, msg, C.arenaW / 2, C.arenaH / 2, 48, COLORS.text, 'center', 800);
   }
   if (s.phase === 'report' || s.phase === 'matchEnd') {
-    ctx.fillStyle = 'rgba(13,15,20,0.88)'; ctx.fillRect(0, 0, C.arenaW, C.arenaH);
-    text(ctx, s.phase === 'report' ? 'HABIT REPORT' : 'MATCH OVER', C.arenaW / 2, 200, 36, COLORS.text, 'center', 800);
-    text(ctx, input.touch ? 'Tap to continue' : 'Click to continue', C.arenaW / 2, 420, 18, COLORS.read);
+    ctx.fillStyle = 'rgba(13,15,20,0.92)'; ctx.fillRect(0, 0, C.arenaW, C.arenaH);
+    const tap = input.touch ? 'Tap' : 'Click';
+    if (s.phase === 'report') {
+      const rep = s.ui.report;
+      text(ctx, 'HABIT REPORT', C.arenaW / 2, 110, 34, COLORS.text, 'center', 800);
+      text(ctx, 'What your rival learned about you', C.arenaW / 2, 146, 15, COLORS.quiet, 'center', 400);
+      rep.habits.forEach((h, i) => text(ctx, h, C.arenaW / 2, 210 + i * 36, 20, COLORS.read, 'center', 600));
+      if (!rep.habits.length) text(ctx, 'Not enough data yet', C.arenaW / 2, 210, 20, COLORS.quiet, 'center', 400);
+      text(ctx, rep.predictability, C.arenaW / 2, 340, 26, COLORS.rival, 'center', 800);
+      text(ctx, `Score ${s.score.player} - ${s.score.rival}`, C.arenaW / 2, 380, 16, COLORS.quiet, 'center', 400);
+      if (rep.challengeJustDone) text(ctx, 'Daily challenge complete!', C.arenaW / 2, 412, 16, COLORS.player, 'center', 700);
+      text(ctx, `${tap} to continue`, C.arenaW / 2, 470, 18, COLORS.text);
+    } else {
+      const won = s.score.player > s.score.rival;
+      text(ctx, won ? 'MATCH WON' : s.score.player === s.score.rival ? 'MATCH DRAWN' : 'MATCH LOST', C.arenaW / 2, 150, 44, COLORS.text, 'center', 800);
+      text(ctx, `${s.score.player} - ${s.score.rival}`, C.arenaW / 2, 200, 22, COLORS.quiet, 'center', 600);
+      text(ctx, s.ui.matchLine ?? '', C.arenaW / 2, 270, 20, COLORS.rival, 'center', 600);
+      text(ctx, `Rival level ${s.save.rivalLevel}`, C.arenaW / 2, 320, 16, COLORS.quiet, 'center', 400);
+      text(ctx, "I'll study this tonight. Come back tomorrow.", C.arenaW / 2, 352, 16, COLORS.quiet, 'center', 400);
+      text(ctx, `${tap} to play again`, C.arenaW / 2, 440, 18, COLORS.read);
+    }
   }
 }
 
@@ -344,6 +421,7 @@ export function start(canvas) {
   window.addEventListener('keyup', e => input.keys.delete(e.key.toLowerCase()));
   window.addEventListener('blur', () => input.keys.clear());
   canvas.addEventListener('mousemove', e => { input.mouse = toArena(e.clientX, e.clientY); });
+  window.addEventListener('pointerdown', unlockAudio, { once: true });
   canvas.addEventListener('mousedown', e => { input.mouse = toArena(e.clientX, e.clientY); input.mouseDown = true; input.clicked = true; });
   window.addEventListener('mouseup', () => { input.mouseDown = false; });
   canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -383,7 +461,7 @@ export function start(canvas) {
   canvas.addEventListener('touchend', touchEnd, { passive: false });
   canvas.addEventListener('touchcancel', touchEnd, { passive: false });
 
-  window.__habit = { state: s, toArena, debugHit: () => hit(s, s.rival, COLORS.player) };
+  window.__habit = { state: s, toArena, debugHit: () => hit(s, s.rival, COLORS.player), debugEndRound: () => endRound(s) };
   let last = performance.now();
   function frame(now) {
     const dt = clampDt((now - last) / 1000);

@@ -106,6 +106,40 @@ def resize(page):
     assert abs(a["x"] - 480) < 2 and abs(a["y"] - 270) < 2, f"centre should map to arena centre, got {a}"
 
 
+SEEDED = {
+    "model": {"counts": {
+        "mid|1|0|*": {"dash:W": 10},
+        "mid|0|0|*": {"move:E": 10},
+        "far|0|0|*": {"still": 8},
+    }},
+    "rivalLevel": 2, "lastDay": "2020-01-01", "bonusReads": 0, "challengeDone": False,
+}
+
+
+def returning_player(browser, url, errors):
+    import json
+    ctx = browser.new_context(viewport={"width": 1280, "height": 720})
+    ctx.add_init_script(f"localStorage.setItem('habit.save.v1', {json.dumps(json.dumps(SEEDED))})")
+    page = ctx.new_page()
+    page.on("console", lambda m: m.type == "error" and errors.append(m.text))
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(url)
+    page.wait_for_function("window.__habit && window.__habit.state")
+    ui = page.evaluate("window.__habit.state.ui")
+    assert ui["welcome"] and ui["welcome"].startswith("Welcome back. Last time:"), f"welcome line missing: {ui}"
+    assert ui["challenge"].startswith("Today: "), f"daily challenge missing: {ui}"
+    page.screenshot(path=os.path.join(OUT, "title-returning.png"))
+    page.mouse.click(640, 360)
+    page.wait_for_timeout(300)
+    page.evaluate("window.__habit.debugEndRound()")
+    page.wait_for_timeout(1500)
+    assert page.evaluate("window.__habit.state.phase") == "report", "round end should lead to the report"
+    rep = page.evaluate("window.__habit.state.ui.report")
+    assert len(rep["habits"]) == 3, f"report should list 3 habits: {rep}"
+    assert rep["predictability"].startswith("Predictability ") and rep["predictability"].endswith("%"), rep
+    page.screenshot(path=os.path.join(OUT, "report.png"))
+
+
 def main():
     httpd, url = serve()
     errors = []
@@ -115,6 +149,7 @@ def main():
         resize(page)
         mobile_landscape(browser, url, errors)
         mobile_portrait(browser, url, errors)
+        returning_player(browser, url, errors)
         browser.close()
     httpd.shutdown()
     if errors:
