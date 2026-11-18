@@ -19,6 +19,7 @@ export const CONFIG = Object.freeze({
   readMinSamples: 6,
   readTelegraph: 0.3,    // s between READ text and punish
   decayPerRound: 0.9,
+  round1FireMult: 2,     // round 1 is the confidence round: rival fires half as often
   closeRange: 180,
   midRange: 380,
   saveKey: 'habit.save.v1',
