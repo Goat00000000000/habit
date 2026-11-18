@@ -118,3 +118,14 @@ test('a habit spread across many situations is still predicted in a new one', ()
   assert.equal(p.action, 'dash:W');
   assert.equal(isConfident(p), true);
 });
+
+test('momentum: keeping the same direction becomes a habit the model can predict', async () => {
+  const { recordMomentum, predictMomentum } = await import('../src/habit.js');
+  const m = createModel();
+  for (let i = 0; i < 8; i++) recordMomentum(m, true);
+  for (let i = 0; i < 2; i++) recordMomentum(m, false);
+  const p = predictMomentum(m);
+  assert.equal(p.p, 0.8);
+  assert.equal(p.n, 10);
+  assert.equal(topHabits(m)[0].text, 'Keeps moving the same way');
+});

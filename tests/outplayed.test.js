@@ -55,3 +55,30 @@ test('report shows reads beaten out of reads', () => {
   for (let i = 0; i < 30; i++) step(s, input, 1 / 60);
   assert.match(s.ui.report.readsLine, /^Reads beaten: 1\/\d+$/);
 });
+
+test('beating a guess shows UNREADABLE and counts separately from reads', () => {
+  const s = newState();
+  const input = createInput();
+  s.round = 2;
+  input.clicked = true;
+  step(s, input, 1 / 60);
+  s.player.hp = 99; s.rival.hp = 99;
+  input.keys = new Set(['w']);
+  for (let i = 0; i < 60 * 15 && !s.activeRead; i++) {
+    input.keys = new Set([(Math.floor(i / 20) % 2) ? 'w' : 'd', (Math.floor(i / 13) % 2) ? 's' : 'a']);
+    step(s, input, 1 / 60);
+  }
+  assert.ok(s.activeRead, 'a read or guess should fire');
+  const wasGuess = s.activeRead.guess;
+  for (let i = 0; i < 60; i++) {
+    s.bullets = s.bullets.filter(b => b.readId !== s.activeRead?.id);
+    step(s, input, 1 / 60);
+  }
+  if (wasGuess) {
+    assert.equal(s.stats.guessesBeaten, 1);
+    assert.equal(s.stats.readsBeaten, 0);
+    assert.equal(s.outplayed.text, 'UNREADABLE');
+  } else {
+    assert.equal(s.outplayed.text, 'OUTPLAYED');
+  }
+});

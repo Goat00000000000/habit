@@ -1,6 +1,6 @@
 // Habit: game loop, input, simulation, screens, rendering.
 import { CONFIG as C } from './config.js';
-import { record, decay, topHabits, predictability } from './habit.js';
+import { record, recordMomentum, decay, topHabits, predictability } from './habit.js';
 import { loadSave, writeSave, welcomeLine } from './save.js';
 import { createBrain, think, readInterval } from './rival.js';
 import { clampDt, distBand, dir8 } from './util.js';
@@ -56,7 +56,7 @@ export function newState() {
     sampleT: 0, lastAction: null, lastRivalShot: -9, readLabel: null, roundWinner: null, paused: false,
     feel: createFeel(),
     roundStats: { dashedLeft: false, farShot: false },
-    stats: { reads: 0, readsBeaten: 0 }, activeRead: null, outplayed: null, readSeq: 0,
+    stats: { reads: 0, readsBeaten: 0, guesses: 0, guessesBeaten: 0 }, activeRead: null, outplayed: null, readSeq: 0,
     ui: { welcome: welcomeLine(save), challenge: challengeLine(save), report: null, matchLine: null },
   };
 }
@@ -88,7 +88,7 @@ function startRound(s, input) {
     input.aimTouch = null; input.stick = null; input.releaseAim = null; input.mouseDown = false;
   }
   s.killTimer = null;
-  s.activeRead = null; s.outplayed = null;
+  s.activeRead = null; s.outplayed = null; s.lastMoveDir = null;
   s.round += 1;
   if (s.round > s.save.bestLevel) s.save.bestLevel = s.round;
   if (s.round % C.checkpointEvery === 0) s.save.checkpoint = Math.max(s.save.checkpoint, s.round);
@@ -125,13 +125,14 @@ function tuningFor(level) {
     readInterval: readInterval(level),
     readDash: Math.max(0.45, C.readThreshold - 0.015 * extra),
     readMove: Math.max(0.3, C.readThresholdMove - 0.015 * extra),
+    readMomentum: Math.max(0.5, C.readThresholdMomentum - 0.015 * extra),
   };
 }
 
 // A run starts at level 1, or at the highest checkpoint reached.
 function startRun(s, input) {
   if (s.round === 0) s.round = Math.max(0, s.save.checkpoint - 1);
-  s.stats = { reads: 0, readsBeaten: 0 };
+  s.stats = { reads: 0, readsBeaten: 0, guesses: 0, guessesBeaten: 0 };
   s.runBest = 0;
   startRound(s, input);
 }
@@ -199,7 +200,12 @@ function updatePlayer(s, input, dt) {
   s.sampleT += dt;
   if (s.sampleT >= C.sampleEvery) {
     s.sampleT -= C.sampleEvery;
-    if (p.dashT <= 0) { const d = dir8(mv.x, mv.y); logAction(s, d ? `move:${d}` : 'still'); }
+    if (p.dashT <= 0) {
+      const d = dir8(mv.x, mv.y);
+      if (d && s.lastMoveDir) recordMomentum(s.model, d === s.lastMoveDir);
+      s.lastMoveDir = d;
+      logAction(s, d ? `move:${d}` : 'still');
+    }
   }
 }
 
@@ -212,11 +218,15 @@ function updateRival(s, dt) {
     blocked: segmentBlocked(r.x, r.y, p.x, p.y),
   };
   const it = think(s.brain, view, s.model, dt);
-  if (it.read) { s.readLabel = { text: it.read.label, t: 0, kind: it.read.kind, at: it.read.fireAt }; s.stats.reads += 1; beep(880); }
+  if (it.read) {
+    s.readLabel = { text: it.read.label, t: 0, kind: it.read.kind, at: it.read.fireAt };
+    if (it.read.kind === 'guess') s.stats.guesses += 1; else s.stats.reads += 1;
+    beep(it.read.kind === 'guess' ? 520 : 880);
+  }
   if (it.readShot) beep(440, 0.12);
   if (it.dash && startDash(r, it.dash.x, it.dash.y)) shake(s.feel, 2);
   if (it.readShot) {
-    s.activeRead = { id: ++s.readSeq, firedAt: s.time, hit: false };
+    s.activeRead = { id: ++s.readSeq, firedAt: s.time, hit: false, guess: s.readLabel?.kind === 'guess' };
     fire(s, r, it.readShot.x, it.readShot.y, 'rival', s.tuning.bulletSpeed).readId = s.activeRead.id;
     s.lastRivalShot = s.time;
   }
@@ -246,8 +256,8 @@ function resolveRead(s) {
   const flying = s.bullets.some(b => b.readId === r.id);
   if (flying && s.time - r.firedAt < 2) return;
   s.activeRead = null;
-  s.stats.readsBeaten += 1;
-  s.outplayed = { t: 0 };
+  if (r.guess) { s.stats.guessesBeaten += 1; s.outplayed = { t: 0, text: 'UNREADABLE' }; }
+  else { s.stats.readsBeaten += 1; s.outplayed = { t: 0, text: 'OUTPLAYED' }; }
   s.brain.sinceRead = -2; // the rival needs a moment after being outplayed
   slowMo(s.feel, 0.3, 0.35);
   shake(s.feel, 4);
@@ -294,6 +304,7 @@ function endRound(s) {
     habits: topHabits(s.model, 3).map(h => `${h.text}   ${h.p}%`),
     predictability: `Predictability ${pred}%`,
     readsLine: `Reads beaten: ${s.stats.readsBeaten}/${s.stats.reads}`,
+    guessLine: `Guesses dodged: ${s.stats.guessesBeaten}/${s.stats.guesses}`,
     challengeJustDone,
   };
   decay(s.model);
@@ -397,8 +408,9 @@ function drawOutplayed(ctx, s) {
   ctx.translate(x, y);
   ctx.scale(1.4 - 0.4 * pop, 1.4 - 0.4 * pop);
   ctx.globalAlpha = o.t > 0.9 ? Math.max(0, 1 - (o.t - 0.9) / 0.3) : 1;
-  text(ctx, 'OUTPLAYED', 0, -14, 40, COLORS.player, 'center', 900);
-  text(ctx, `Reads beaten ${s.stats.readsBeaten}/${s.stats.reads}`, 0, 20, 14, COLORS.text, 'center', 600);
+  text(ctx, o.text, 0, -14, o.text === 'OUTPLAYED' ? 40 : 34, COLORS.player, 'center', 900);
+  const sub = o.text === 'OUTPLAYED' ? `Reads beaten ${s.stats.readsBeaten}/${s.stats.reads}` : "It couldn't read you";
+  text(ctx, sub, 0, 20, 14, COLORS.text, 'center', 600);
   ctx.restore();
 }
 
@@ -412,7 +424,7 @@ function drawRead(ctx, s) {
   ctx.translate(lx, s.rival.y < 80 ? s.rival.y + 44 : s.rival.y - 44);
   ctx.scale(0.6 + 0.4 * pop, 0.6 + 0.4 * pop);
   ctx.globalAlpha = r.t > 0.9 ? Math.max(0, 1 - (r.t - 0.9) / 0.3) : 1;
-  text(ctx, r.text, 0, 0, 18, COLORS.read, 'center', 800);
+  text(ctx, r.text, 0, 0, 18, r.kind === 'guess' ? COLORS.quiet : COLORS.read, 'center', 800);
   ctx.restore();
 }
 
@@ -475,7 +487,7 @@ function render(ctx, s, input) {
       rep.habits.forEach((h, i) => text(ctx, h, C.arenaW / 2, 210 + i * 36, 20, COLORS.read, 'center', 600));
       if (!rep.habits.length) text(ctx, 'Not enough data yet', C.arenaW / 2, 210, 20, COLORS.quiet, 'center', 400);
       text(ctx, rep.predictability, C.arenaW / 2, 340, 26, COLORS.rival, 'center', 800);
-      text(ctx, `${rep.readsLine}   ·   Level ${s.round}`, C.arenaW / 2, 380, 16, COLORS.quiet, 'center', 400);
+      text(ctx, `${rep.readsLine}   ·   ${rep.guessLine}   ·   Level ${s.round}`, C.arenaW / 2, 380, 16, COLORS.quiet, 'center', 400);
       if (rep.challengeJustDone) text(ctx, 'Daily challenge complete!', C.arenaW / 2, 412, 16, COLORS.player, 'center', 700);
       const next = s.roundWinner === 'player' ? `Next: Level ${s.round + 1}` : s.roundWinner === 'draw' ? `Replay Level ${s.round}` : 'Run over';
       text(ctx, `${tap} to continue   ·   ${next}`, C.arenaW / 2, 470, 18, COLORS.text);
@@ -483,7 +495,7 @@ function render(ctx, s, input) {
       text(ctx, 'RUN OVER', C.arenaW / 2, 140, 44, COLORS.text, 'center', 800);
       text(ctx, `You reached Level ${s.ui.runLevel}   ·   Best Level ${s.save.bestLevel}`, C.arenaW / 2, 192, 20, COLORS.quiet, 'center', 600);
       text(ctx, s.ui.matchLine ?? '', C.arenaW / 2, 270, 20, COLORS.rival, 'center', 600);
-      text(ctx, `Reads beaten this run: ${s.stats.readsBeaten}/${s.stats.reads}`, C.arenaW / 2, 320, 16, COLORS.quiet, 'center', 400);
+      text(ctx, `This run: reads beaten ${s.stats.readsBeaten}/${s.stats.reads}   ·   guesses dodged ${s.stats.guessesBeaten}/${s.stats.guesses}`, C.arenaW / 2, 320, 16, COLORS.quiet, 'center', 400);
       text(ctx, "I'll study this tonight. Come back tomorrow.", C.arenaW / 2, 352, 16, COLORS.quiet, 'center', 400);
       text(ctx, `${tap} to try again from Level ${s.save.checkpoint}`, C.arenaW / 2, 440, 18, COLORS.read);
     }

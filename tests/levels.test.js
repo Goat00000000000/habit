@@ -81,5 +81,5 @@ test('past level 5 the rival gets tougher and reads more, but never aims better 
   assert.ok(t9.rivalHp > t5.rivalHp);
   assert.ok(t9.readInterval < t5.readInterval);
   assert.ok(t9.readMove < t5.readMove);
-  assert.ok(t15.readInterval >= 1.5);
+  assert.ok(t15.readInterval >= 1.2);
 });

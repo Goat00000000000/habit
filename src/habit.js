@@ -60,6 +60,19 @@ export function predict(model, ctx, kind) {
   return bestIn(model.counts[ALL], kind) ?? coarse ?? full;
 }
 
+// Momentum: how often the player keeps moving the same direction from one sample to the next.
+const MOMENTUM = 'momentum';
+
+export function recordMomentum(model, kept) {
+  bump(model, MOMENTUM, kept ? 'keep' : 'turn');
+}
+
+export function predictMomentum(model) {
+  const b = model.counts[MOMENTUM];
+  const keep = b?.keep ?? 0, n = keep + (b?.turn ?? 0);
+  return n ? { p: keep / n, n } : null;
+}
+
 export function isConfident(pred, threshold = CONFIG.readThreshold) {
   return !!pred && pred.p > threshold && pred.n >= CONFIG.readMinSamples;
 }
@@ -96,13 +109,16 @@ function groups(model) {
 }
 
 export function topHabits(model, k = 3) {
-  const ranked = groups(model)
+  const entries = groups(model)
     .filter(g => g.action !== 'shoot' || g.n >= CONFIG.readMinSamples)
-    .sort((a, b) => b.p * Math.min(b.n, 20) - a.p * Math.min(a.n, 20));
+    .map(g => ({ ...g, text: describe(g.key, g.action) }));
+  const mom = predictMomentum(model);
+  if (mom && mom.n >= CONFIG.readMinSamples && mom.p > 0.5) entries.push({ ...mom, text: 'Keeps moving the same way' });
+  const ranked = entries.sort((a, b) => b.p * Math.min(b.n, 20) - a.p * Math.min(a.n, 20));
   const seen = new Set();
   const out = [];
   for (const g of ranked) {
-    const text = describe(g.key, g.action);
+    const text = g.text;
     if (seen.has(text)) continue;
     seen.add(text);
     out.push({ text, p: Math.round(g.p * 100) });

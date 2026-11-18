@@ -17,6 +17,7 @@ export const CONFIG = Object.freeze({
   reactionTime: 0.25,    // s rival lag
   readThreshold: 0.55,   // dash: top action share needed to commit a read (2 sensible choices)
   readThresholdMove: 0.4, // movement: 9 possible directions, so a lower bar still means a clear habit
+  readThresholdMomentum: 0.55, // momentum: share of 0.25 s samples where you kept moving the same way
   readMinSamples: 6,
   readTelegraph: 0.3,    // s between READ text and punish
   firstReadAfter: 2,     // s into a round before the first read is allowed

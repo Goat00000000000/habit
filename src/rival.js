@@ -2,7 +2,8 @@
 // it predicts the player's habit, telegraphs it ("READ: DASH LEFT"), then
 // 0.3 s later fires a read shot at where the habit says the player will be.
 import { CONFIG } from './config.js';
-import { predict, isConfident } from './habit.js';
+import { predict, isConfident, predictMomentum } from './habit.js';
+import { dir8 } from './util.js';
 
 const DIRS = {
   N: [0, -1], S: [0, 1], E: [1, 0], W: [-1, 0],
@@ -10,14 +11,17 @@ const DIRS = {
 };
 const WORDS = { N: 'UP', S: 'DOWN', E: 'RIGHT', W: 'LEFT', NE: 'UP-RIGHT', NW: 'UP-LEFT', SE: 'DOWN-RIGHT', SW: 'DOWN-LEFT' };
 
-// Seconds between reads at each level: none at 1, 5 s at 2 down to 3 s at 5, then faster to a 1.5 s floor.
+// Seconds between reads at each level: none at 1, 3 s at 2 down to 2.2 s at 5, then faster to a 1.2 s floor.
 export function readInterval(level) {
   if (level <= 1) return Infinity;
-  if (level <= 5) return 5 - (level - 2) * (2 / 3);
-  return Math.max(1.5, 3 - 0.25 * (level - 5));
+  if (level <= 5) return 3 - (level - 2) * (0.8 / 3);
+  return Math.max(1.2, 2.2 - 0.15 * (level - 5));
 }
 
-const DEFAULT_TUNING = { lead: 1, aimJitter: 0, dodgeChance: 1, readDash: CONFIG.readThreshold, readMove: CONFIG.readThresholdMove };
+const DEFAULT_TUNING = {
+  lead: 1, aimJitter: 0, dodgeChance: 1,
+  readDash: CONFIG.readThreshold, readMove: CONFIG.readThresholdMove, readMomentum: CONFIG.readThresholdMomentum,
+};
 
 export function createBrain(level, bonusReads, tuning = DEFAULT_TUNING) {
     return { level, bonusReads, tuning, rolled: new WeakSet(), t: 0, history: [], sinceRead: 0, firstRead: true, pending: null, strafe: 1, nextFlip: 1.8 };
@@ -46,7 +50,26 @@ function tryRead(brain, view, model, foe) {
     const lead = CONFIG.playerSpeed * (travel + CONFIG.readTelegraph);
     return { label: `READ: MOVES ${WORDS[dir]}`, kind: 'space', fireAt: { x: foe.x + dx * lead, y: foe.y + dy * lead } };
   }
+  // Momentum: most players keep moving the same way for a moment. Shoot where they will be if they don't turn.
+  const mom = predictMomentum(model);
+  const speed = Math.hypot(foe.vx, foe.vy);
+  if (speed > 40 && isConfident(mom, brain.tuning.readMomentum ?? CONFIG.readThresholdMomentum)) {
+    const dir = dir8(foe.vx, foe.vy);
+    const lead = Math.hypot(foe.x - view.me.x, foe.y - view.me.y) / (view.rivalBulletSpeed ?? CONFIG.bulletSpeed) + CONFIG.readTelegraph;
+    return { label: `READ: KEEPS MOVING ${WORDS[dir]}`, kind: 'space', fireAt: { x: foe.x + foe.vx * lead, y: foe.y + foe.vy * lead } };
+  }
   return null;
+}
+
+// No confident read? Guess, and say so. A skilled player sees GUESS instead of READ.
+function guess(view, foe) {
+  const speed = Math.hypot(foe.vx, foe.vy);
+  if (speed > 40) {
+    const dir = dir8(foe.vx, foe.vy);
+    const lead = Math.hypot(foe.x - view.me.x, foe.y - view.me.y) / (view.rivalBulletSpeed ?? CONFIG.bulletSpeed) + CONFIG.readTelegraph;
+    return { label: `GUESS: KEEPS MOVING ${WORDS[dir]}`, kind: 'guess', fireAt: { x: foe.x + foe.vx * lead, y: foe.y + foe.vy * lead } };
+  }
+  return { label: 'GUESS: STAYS PUT', kind: 'guess', fireAt: { x: foe.x, y: foe.y } };
 }
 
 function incomingBullet(view) {
@@ -99,11 +122,16 @@ export function think(brain, view, model, dt) {
     return intent;
   }
 
-  const full = Math.max(2, readInterval(view.round) - 0.5 * brain.bonusReads);
+  const full = Math.max(1.2, readInterval(view.round) - 0.3 * brain.bonusReads);
   const interval = brain.firstRead && full !== Infinity ? Math.min(full, CONFIG.firstReadAfter) : full;
-  if (brain.sinceRead >= interval && me.fireReady && !view.blocked) {
-    const read = tryRead(brain, view, model, foe);
+  if (brain.sinceRead >= interval && !view.blocked) {
+    let read = tryRead(brain, view, model, foe);
+    if (!read) {
+      brain.failedReads = (brain.failedReads ?? 0) + 1;
+      if (brain.failedReads >= 1) read = guess(view, foe);
+    }
     if (read) {
+      brain.failedReads = 0;
       brain.sinceRead = 0;
       brain.firstRead = false;
       brain.pending = { left: CONFIG.readTelegraph, fireAt: read.fireAt };

@@ -31,11 +31,12 @@ function run(model, round, seconds, dt = 0.05) {
   return { reads, punishes };
 }
 
-test('read interval: none in round 1, 5 s at round 2, 3 s at round 5', () => {
+test('read interval: none at level 1, 3 s at level 2, 2.2 s at level 5, never under 1.2 s', () => {
   assert.equal(readInterval(1), Infinity);
-  assert.equal(readInterval(2), 5);
-  assert.equal(readInterval(5), 3);
-  assert.ok(readInterval(3) < 5 && readInterval(3) > 3);
+  assert.equal(readInterval(2), 3);
+  assert.ok(Math.abs(readInterval(5) - 2.2) < 1e-9);
+  assert.ok(readInterval(3) < 3 && readInterval(3) > 2.2);
+  assert.equal(readInterval(50), 1.2);
 });
 
 test('round 1 never reads even with a confident model', () => {
@@ -50,8 +51,9 @@ test('confident dodge habit produces a READ: DASH LEFT aimed left of the player'
   assert.ok(reads[0].read.fireAt.x < 400);
 });
 
-test('unconfident model never reads', () => {
-  assert.equal(run(createModel(), 4, 30).reads.length, 0);
+test('unconfident model never makes a READ, only labelled GUESSes', () => {
+  const { reads } = run(createModel(), 4, 30);
+  assert.ok(reads.every(r => r.read.kind === 'guess' && r.read.label.startsWith('GUESS: ')));
 });
 
 test('reads respect the per-round budget', () => {
@@ -83,4 +85,37 @@ test('no shots and no reads while a pillar blocks line of sight', () => {
 test('the first read in round 2 can come within about 2 s, not after a full interval', () => {
   const { reads } = run(dodgerModel(), 2, 4);
   assert.ok(reads.length >= 1 && reads[0].t <= 2.1, `first read at ${reads[0]?.t}`);
+});
+
+test('a momentum habit gives a KEEPS MOVING read that shoots ahead of the player', async () => {
+  const { recordMomentum } = await import('../src/habit.js');
+  const m = createModel();
+  for (let i = 0; i < 10; i++) recordMomentum(m, true);
+  const brain = createBrain(1, 0);
+  let read = null;
+  for (let t = 0; t < 8 && !read; t += 0.05) {
+    const v = view(3, t);
+    v.foe = { ...v.foe, vx: 260, vy: 0 };
+    read = think(brain, v, m, 0.05).read;
+  }
+  assert.ok(read, 'should read momentum');
+  assert.equal(read.label, 'READ: KEEPS MOVING RIGHT');
+  assert.ok(read.fireAt.x > 400 + 50);
+});
+
+test('when it cannot read the player it guesses, labelled GUESS, never READ', () => {
+  const brain = createBrain(1, 0);
+  const seen = [];
+  for (let t = 0; t < 12; t += 0.05) {
+    const v = view(3, t);
+    v.foe = { ...v.foe, vx: 0, vy: -260 };
+    const it = think(brain, v, createModel(), 0.05);
+    if (it.read) seen.push(it.read);
+  }
+  assert.ok(seen.length >= 2, `expected guesses, got ${seen.length}`);
+  for (const r of seen) {
+    assert.equal(r.kind, 'guess');
+    assert.match(r.label, /^GUESS: /);
+  }
+  assert.ok(seen[0].fireAt.y < 270, 'guess leads the player along their movement');
 });
