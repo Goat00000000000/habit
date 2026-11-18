@@ -138,6 +138,16 @@ def returning_player(browser, url, errors):
     assert len(rep["habits"]) == 3, f"report should list 3 habits: {rep}"
     assert rep["predictability"].startswith("Predictability ") and rep["predictability"].endswith("%"), rep
     page.screenshot(path=os.path.join(OUT, "report.png"))
+    # In-game read: the seeded "dodges left when shot at" habit should trigger a telegraphed READ by round 3.
+    page.evaluate("(() => { const s = window.__habit.state; s.round = 2; s.score = {player: 0, rival: 0}; s.phase = 'title'; })()")
+    page.mouse.click(640, 360)
+    page.wait_for_timeout(300)
+    page.evaluate("(() => { const s = window.__habit.state; s.player.hp = 99; s.rival.hp = 99; })()")
+    page.wait_for_function("window.__habit.state.readLabel !== null", timeout=12000)
+    label = page.evaluate("window.__habit.state.readLabel.text")
+    assert label.startswith("READ: "), label
+    page.wait_for_timeout(120)
+    page.screenshot(path=os.path.join(OUT, "read.png"))
 
 
 def main():
