@@ -12,7 +12,7 @@ const COLORS = { bg: '#0d0f14', wall: '#2a3040', player: '#4fd1ff', rival: '#ff6
 function createInput() {
   return {
     keys: new Set(), mouse: { x: C.arenaW / 2, y: C.arenaH / 2 }, mouseDown: false, dashPressed: false, clicked: false,
-    touch: false, stick: null, aimTouch: null, dashDir: null, fireOnce: false,
+    touch: false, stick: null, aimTouch: null, dashDir: null, fireOnce: false, releaseAim: null,
   };
 }
 
@@ -78,7 +78,13 @@ function beep(freq = 880, len = 0.08) {
   } catch { /* no sound is fine */ }
 }
 
-function startRound(s) {
+function startRound(s, input) {
+  if (input) {
+    // A touch or key held through the end of a round must not fire or dash in the next one.
+    input.fireOnce = false; input.dashPressed = false; input.dashDir = null;
+    input.aimTouch = null; input.stick = null; input.releaseAim = null; input.mouseDown = false;
+  }
+  s.killTimer = null;
   s.round += 1;
   s.time = 0; s.sampleT = 0; s.bullets = []; s.readLabel = null; s.lastRivalShot = -9;
   s.player = fighter(240, C.arenaH / 2);
@@ -132,14 +138,15 @@ function updatePlayer(s, input, dt) {
   if (input.touch) {
     // Touch aim: drag direction from the right thumb, else auto-aim at the rival.
     const a = input.aimTouch;
-    const dx = a ? a.x - a.sx : 0, dy = a ? a.y - a.sy : 0;
-    if (Math.hypot(dx, dy) > 15) { p.aimX = p.x + dx * 10; p.aimY = p.y + dy * 10; }
+    const drag = a ? { x: a.x - a.sx, y: a.y - a.sy } : input.releaseAim;
+    input.releaseAim = null;
+    if (drag && Math.hypot(drag.x, drag.y) > 15) { p.aimX = p.x + drag.x * 10; p.aimY = p.y + drag.y * 10; }
     else if (!a) { p.aimX = s.rival.x; p.aimY = s.rival.y; }
   } else { p.aimX = input.mouse.x; p.aimY = input.mouse.y; }
   const dash = input.dashDir ?? mv;
   input.dashDir = null;
   if (input.dashPressed && startDash(p, dash.x, dash.y)) {
-    const d = dir8(dash.x, dash.y);
+    const d = dir8(dash.x, dash.y) ?? (dash.x < 0 ? 'W' : 'E');
     if (d.includes('W')) s.roundStats.dashedLeft = true;
     logAction(s, `dash:${d}`);
     shake(s.feel, 3);
@@ -240,14 +247,19 @@ function step(s, input, dt) {
   const click = input.clicked;
   input.clicked = false;
   if (s.paused) return;
-  if (s.phase === 'title') { if (click) startRound(s); }
+  if (s.phase === 'title') { if (click) startRound(s, input); }
   else if (s.phase === 'round') {
     s.time += dt;
     if (s.readLabel) s.readLabel.t += dt;
     updatePlayer(s, input, dt);
     updateRival(s, dt);
     updateBullets(s, dt);
-    if (s.player.hp <= 0 || s.rival.hp <= 0 || s.time >= C.roundTime) endRound(s);
+    if (s.player.hp <= 0 || s.rival.hp <= 0) {
+      // Let the killing blow play out in slow motion before the round ends.
+      s.killTimer ??= 0.15;
+      s.killTimer -= dt;
+      if (s.killTimer <= 0) endRound(s);
+    } else if (s.time >= C.roundTime) endRound(s);
   } else if (s.phase === 'roundEnd') { if (s.phaseT > 1.2) { s.phase = 'report'; s.phaseT = 0; } }
   else if (s.phase === 'report') {
     if (click || s.phaseT > 5) {
@@ -257,10 +269,10 @@ function step(s, input, dt) {
         s.ui.matchLine = top ? `"${top.text}. ${top.p}% of the time. I noticed."` : '"You are hard to read. For now."';
         writeSave(safeStorage(), s.save);
         s.phase = 'matchEnd'; s.phaseT = 0;
-      } else startRound(s);
+      } else startRound(s, input);
     }
   } else if (s.phase === 'matchEnd') {
-    if (click && s.phaseT > 0.5) { s.round = 0; s.score = { player: 0, rival: 0 }; startRound(s); }
+    if (click && s.phaseT > 0.5) { s.round = 0; s.score = { player: 0, rival: 0 }; startRound(s, input); }
   }
   input.dashPressed = false;
 }
@@ -419,7 +431,7 @@ export function start(canvas) {
     input.keys.add(k);
   });
   window.addEventListener('keyup', e => input.keys.delete(e.key.toLowerCase()));
-  window.addEventListener('blur', () => input.keys.clear());
+  window.addEventListener('blur', () => { input.keys.clear(); input.mouseDown = false; });
   canvas.addEventListener('mousemove', e => { input.mouse = toArena(e.clientX, e.clientY); });
   window.addEventListener('pointerdown', unlockAudio, { once: true });
   canvas.addEventListener('mousedown', e => { input.mouse = toArena(e.clientX, e.clientY); input.mouseDown = true; input.clicked = true; });
@@ -453,7 +465,7 @@ export function start(canvas) {
       if (a?.id === t.identifier) {
         const dx = a.x - a.sx, dy = a.y - a.sy, d = Math.hypot(dx, dy);
         if (d > 60 && performance.now() - a.t0 < 150) { input.dashPressed = true; input.dashDir = { x: dx / d, y: dy / d }; }
-        else input.fireOnce = true;
+        else { input.fireOnce = true; if (d > 15) input.releaseAim = { x: dx, y: dy }; }
         input.aimTouch = null;
       }
     }
@@ -461,7 +473,7 @@ export function start(canvas) {
   canvas.addEventListener('touchend', touchEnd, { passive: false });
   canvas.addEventListener('touchcancel', touchEnd, { passive: false });
 
-  window.__habit = { state: s, toArena, debugHit: () => hit(s, s.rival, COLORS.player), debugEndRound: () => endRound(s) };
+  window.__habit = { state: s, input, toArena, debugHit: () => hit(s, s.rival, COLORS.player), debugEndRound: () => endRound(s) };
   let last = performance.now();
   function frame(now) {
     const dt = clampDt((now - last) / 1000);

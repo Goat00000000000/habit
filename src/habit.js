@@ -119,10 +119,20 @@ export function serialize(model) {
   return JSON.stringify(model);
 }
 
+const isPlainObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+// Saved data is untrusted: keep only object buckets holding positive finite counts.
 export function deserialize(str) {
+  const model = createModel();
   try {
     const m = JSON.parse(str);
-    if (m && typeof m.counts === 'object' && m.counts !== null) return m;
-  } catch { /* fall through */ }
-  return createModel();
+    if (!isPlainObject(m?.counts)) return model;
+    for (const [key, bucket] of Object.entries(m.counts)) {
+      if (!isPlainObject(bucket)) continue;
+      const clean = {};
+      for (const [a, c] of Object.entries(bucket)) if (Number.isFinite(c) && c > 0) clean[a] = c;
+      if (Object.keys(clean).length) model.counts[key] = clean;
+    }
+  } catch { /* junk: fresh model */ }
+  return model;
 }

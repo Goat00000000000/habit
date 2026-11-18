@@ -90,3 +90,9 @@ test('deserialize junk returns empty model', () => {
   assert.deepEqual(deserialize('junk'), createModel());
   assert.deepEqual(deserialize(null), createModel());
 });
+
+test('deserialize drops badly shaped buckets and counts so decay cannot crash', () => {
+  const m = deserialize(JSON.stringify({ counts: { 'far|0|0|*': null, 'mid|0|0|*': { 'move:W': '7', 'move:E': 3, 'dash:W': -1 }, 'x': [1] } }));
+  assert.deepEqual(m, { counts: { 'mid|0|0|*': { 'move:E': 3 } } });
+  assert.doesNotThrow(() => decay(m));
+});

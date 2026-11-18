@@ -40,6 +40,14 @@ def desktop(browser, url, errors):
     page.wait_for_timeout(30)
     page.screenshot(path=os.path.join(OUT, "hit.png"))
     assert page.evaluate("window.__habit.state.feel.particles.length") > 0, "a hit should spawn particles"
+    # the killing hit plays visible slow-mo before the round ends
+    page.evaluate("(() => { const h = window.__habit; h.state.rival.hp = 1; h.debugHit(); })()")
+    page.wait_for_timeout(100)
+    assert page.evaluate("window.__habit.state.phase") == "round", "round should keep running through the kill slow-mo"
+    page.wait_for_function("window.__habit.state.phase === 'roundEnd'", timeout=3000)
+    page.evaluate("(() => { const s = window.__habit.state; s.round = 0; s.score = {player: 0, rival: 0}; s.phase = 'title'; })()")
+    page.mouse.click(640, 360)
+    page.wait_for_timeout(200)
     for i in range(50):  # ~10 s of play
         key = "a" if (i // 5) % 2 else "d"
         page.keyboard.down(key)
@@ -53,6 +61,11 @@ def desktop(browser, url, errors):
     assert phase != "title", f"still on title, phase={phase}"
     assert page.evaluate("window.__habit.state.round >= 2 || window.__habit.state.time > 1"), "round clock did not run"
     page.screenshot(path=os.path.join(OUT, "desktop.png"))
+    # mouse held while the window loses focus must not keep firing
+    page.mouse.down()
+    page.evaluate("window.dispatchEvent(new Event('blur'))")
+    assert page.evaluate("window.__habit.input.mouseDown") is False, "blur should release the fire button"
+    page.mouse.up()
     return page
 
 
@@ -86,6 +99,33 @@ def mobile_landscape(browser, url, errors):
     page.wait_for_timeout(50)
     assert page.evaluate("window.__habit.state.player.dashCd") > 0, "swipe should dash"
     page.screenshot(path=os.path.join(OUT, "mobile.png"))
+    # drag-to-aim: a slow up-right drag on the right half must shoot up-right, not auto-aim at the rival
+    page.wait_for_timeout(600)
+    pin_rival = "(() => { const s = window.__habit.state; s.bullets = s.bullets.filter(b => b.owner !== 'player'); s.player.fireCd = 0; s.player.x = 300; s.player.y = 270; s.rival.x = 500; s.rival.y = 470; })()"
+    page.evaluate(pin_rival)
+    touch("touchStart", [(650, 200)])
+    for i in range(6):
+        touch("touchMove", [(650 + 6 * i, 200 - 6 * i)])
+        page.wait_for_timeout(40)
+    page.evaluate(pin_rival)  # rival below-right, so auto-aim would shoot downward
+    touch("touchEnd", [])
+    page.wait_for_timeout(50)
+    shots = page.evaluate("window.__habit.state.bullets.filter(b => b.owner === 'player').map(b => [b.vx, b.vy])")
+    assert shots and shots[0][1] < -100 and shots[0][0] > 100, f"drag up-right should shoot up-right, got {shots}"
+    # a touch held through round end must not fire a stray shot when the next round starts
+    touch("touchStart", [(650, 200)])
+    page.evaluate("window.__habit.debugEndRound()")
+    page.wait_for_timeout(100)
+    touch("touchEnd", [])
+    page.wait_for_function("window.__habit.state.phase === 'report'", timeout=5000)
+    page.touchscreen.tap(422, 195)
+    page.wait_for_timeout(60)
+    stray = page.evaluate("window.__habit.state.bullets.filter(b => b.owner === 'player').length")
+    assert stray == 0, f"no stray shot at round start, got {stray}"
+    # a tiny stick push plus a keyboard Space must not crash
+    page.evaluate("(() => { const i = window.__habit.input; i.stick = {id: 9, ox: 100, oy: 300, x: 109, y: 300}; i.dashPressed = true; window.__habit.state.player.dashCd = 0; })()")
+    page.wait_for_timeout(100)
+    page.evaluate("window.__habit.input.stick = null")
 
 
 def mobile_portrait(browser, url, errors):
