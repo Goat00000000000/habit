@@ -79,3 +79,8 @@ test('no shots and no reads while a pillar blocks line of sight', () => {
     assert.equal(it.read, null);
   }
 });
+
+test('the first read in round 2 can come within about 2 s, not after a full interval', () => {
+  const { reads } = run(dodgerModel(), 2, 4);
+  assert.ok(reads.length >= 1 && reads[0].t <= 2.1, `first read at ${reads[0]?.t}`);
+});

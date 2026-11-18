@@ -18,7 +18,7 @@ export function readInterval(round) {
 const DEFAULT_TUNING = { lead: 1, aimJitter: 0, dodgeChance: 1 };
 
 export function createBrain(level, bonusReads, tuning = DEFAULT_TUNING) {
-  return { level, bonusReads, tuning, rolled: new WeakSet(), t: 0, history: [], sinceRead: 0, pending: null, strafe: 1, nextFlip: 1.8 };
+    return { level, bonusReads, tuning, rolled: new WeakSet(), t: 0, history: [], sinceRead: 0, firstRead: true, pending: null, strafe: 1, nextFlip: 1.8 };
 }
 
 // Player state as the rival "sees" it: 250 ms old, like a human reaction.
@@ -97,11 +97,13 @@ export function think(brain, view, model, dt) {
     return intent;
   }
 
-  const interval = Math.max(2, readInterval(view.round) - 0.5 * brain.bonusReads);
+  const full = Math.max(2, readInterval(view.round) - 0.5 * brain.bonusReads);
+  const interval = brain.firstRead && full !== Infinity ? Math.min(full, CONFIG.firstReadAfter) : full;
   if (brain.sinceRead >= interval && me.fireReady && !view.blocked) {
     const read = tryRead(brain, view, model, foe);
     if (read) {
       brain.sinceRead = 0;
+      brain.firstRead = false;
       brain.pending = { left: CONFIG.readTelegraph, fireAt: read.fireAt };
       intent.read = read;
       return intent;

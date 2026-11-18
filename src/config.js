@@ -18,6 +18,7 @@ export const CONFIG = Object.freeze({
   readThreshold: 0.55,   // top action share needed to commit a read
   readMinSamples: 6,
   readTelegraph: 0.3,    // s between READ text and punish
+  firstReadAfter: 2,     // s into a round before the first read is allowed
   decayPerRound: 0.9,
   closeRange: 180,
   midRange: 380,

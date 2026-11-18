@@ -1,8 +1,8 @@
 // Habit model: counts what the player does in each situation.
 // Situation (Ctx) = { dist, shotAt, lowHp, cover, last }. Action = 'move:W', 'dash:NE', 'shoot', 'still'.
-// Each event is counted twice: under the full situation, and under a coarse one
-// without `last`. Predictions use the full one when it has enough samples,
-// otherwise fall back to the coarse one.
+// Each event is counted three times: under the full situation, under a coarse one
+// without `last`, and under ALL (every situation together). Predictions use the most
+// specific one that has enough samples, so a new player gets read within seconds.
 import { CONFIG } from './config.js';
 
 const DIR_WORDS = {
@@ -17,6 +17,8 @@ export function createModel() {
 export function ctxKey(ctx) {
   return `${ctx.dist}|${ctx.shotAt ? 1 : 0}|${ctx.lowHp ? 1 : 0}|${ctx.cover ? 1 : 0}|${ctx.last ?? '-'}`;
 }
+
+const ALL = 'all';
 
 function coarseKey(ctx) {
   return ctxKey({ ...ctx, last: '*' });
@@ -36,6 +38,7 @@ function bump(model, key, action) {
 export function record(model, ctx, action) {
   bump(model, ctxKey(ctx), action);
   if (ctx.last !== '*') bump(model, coarseKey(ctx), action);
+  bump(model, ALL, action);
 }
 
 function bestIn(bucket, kind) {
@@ -52,7 +55,9 @@ function bestIn(bucket, kind) {
 export function predict(model, ctx, kind) {
   const full = bestIn(model.counts[ctxKey(ctx)], kind);
   if (full && full.n >= CONFIG.readMinSamples) return full;
-  return bestIn(model.counts[coarseKey(ctx)], kind) ?? full;
+  const coarse = bestIn(model.counts[coarseKey(ctx)], kind);
+  if (coarse && coarse.n >= CONFIG.readMinSamples) return coarse;
+  return bestIn(model.counts[ALL], kind) ?? coarse ?? full;
 }
 
 export function isConfident(pred) {

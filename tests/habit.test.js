@@ -102,3 +102,19 @@ test('moving near cover becomes a cover habit', () => {
   many(m, { dist: 'mid', shotAt: false, lowHp: false, cover: true, last: null }, 'move:E', 10);
   assert.equal(topHabits(m)[0].text, 'Moves right from cover');
 });
+
+test('a habit spread across many situations is still predicted in a new one', () => {
+  const m = createModel();
+  const situations = [
+    { dist: 'close', shotAt: true, lowHp: false, cover: false, last: null },
+    { dist: 'mid', shotAt: true, lowHp: false, cover: true, last: 'shoot' },
+    { dist: 'far', shotAt: true, lowHp: true, cover: false, last: 'move:E' },
+    { dist: 'close', shotAt: false, lowHp: false, cover: true, last: 'still' },
+    { dist: 'mid', shotAt: false, lowHp: true, cover: false, last: 'move:N' },
+    { dist: 'far', shotAt: false, lowHp: false, cover: true, last: 'dash:E' },
+  ];
+  for (const ctx of situations) record(m, ctx, 'dash:W');
+  const p = predict(m, { dist: 'mid', shotAt: true, lowHp: true, cover: true, last: 'move:S' }, 'dash');
+  assert.equal(p.action, 'dash:W');
+  assert.equal(isConfident(p), true);
+});
