@@ -34,7 +34,7 @@ The rival watches what you do: where you dodge when shot at, which way you move,
 
 ## How I used AI
 
-I brainstormed concepts with Claude (Anthropic) and picked Habit. I wrote the design (core loop, Day 1 hook, progression, monetization) and directed the build: Claude wrote most of the code and tests under my direction. I playtested every build and drove the changes listed above.
+I developed the concept with Claude (Anthropic), then shaped it through my own playtesting: I made level 1 a confidence level, replaced best of 5 with an endless ladder, and made reads actually happen after the AI barely read me in my own runs. Claude wrote most of the code and tests under my direction, and I playtested every build.
 
 The AI inside the game is not an LLM. It is a small pattern model (counts of what you do in each situation, with fallbacks when data is thin) that runs entirely in the browser, so it is explainable and has no server or API key.
 
