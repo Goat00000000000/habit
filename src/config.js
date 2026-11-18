@@ -19,8 +19,17 @@ export const CONFIG = Object.freeze({
   readMinSamples: 6,
   readTelegraph: 0.3,    // s between READ text and punish
   decayPerRound: 0.9,
-  round1FireMult: 2,     // round 1 is the confidence round: rival fires half as often
   closeRange: 180,
   midRange: 380,
   saveKey: 'habit.save.v1',
+  // Rival difficulty per round (1-5). Round 1 is the confidence round: ~90% of new players should win it.
+  // fireCd = seconds between rival shots, lead = how much it aims ahead of you (0-1),
+  // aimJitter = random aim error in px, dodgeChance = chance it dashes away from each of your bullets.
+  difficulty: [
+    { rivalHp: 2, fireCd: 2.0, bulletSpeed: 280, lead: 0.0, aimJitter: 90, dodgeChance: 0 },
+    { rivalHp: 3, fireCd: 1.2, bulletSpeed: 360, lead: 0.1, aimJitter: 60, dodgeChance: 0 },
+    { rivalHp: 3, fireCd: 1.0, bulletSpeed: 420, lead: 0.4, aimJitter: 40, dodgeChance: 0.25 },
+    { rivalHp: 3, fireCd: 0.8, bulletSpeed: 470, lead: 0.7, aimJitter: 20, dodgeChance: 0.45 },
+    { rivalHp: 3, fireCd: 0.6, bulletSpeed: 520, lead: 1.0, aimJitter: 0, dodgeChance: 0.65 },
+  ],
 });

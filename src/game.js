@@ -9,7 +9,7 @@ import { createFeel, hitStop, slowMo, shake, flash, burst, ghost, updateFeel, ca
 const COLORS = { bg: '#0d0f14', wall: '#2a3040', player: '#4fd1ff', rival: '#ff6b4a', text: '#e8ecf4', quiet: '#8a93a6', read: '#ffd84a' };
 
 // ---------- input ----------
-function createInput() {
+export function createInput() {
   return {
     keys: new Set(), mouse: { x: C.arenaW / 2, y: C.arenaH / 2 }, mouseDown: false, dashPressed: false, clicked: false,
     touch: false, stick: null, aimTouch: null, dashDir: null, fireOnce: false, releaseAim: null,
@@ -45,7 +45,7 @@ function safeStorage() {
   try { return window.localStorage; } catch { return { getItem: () => null, setItem: () => {} }; }
 }
 
-function newState() {
+export function newState() {
   const save = loadSave(safeStorage(), today());
   return {
     phase: 'title', phaseT: 0, round: 0, score: { player: 0, rival: 0 }, time: 0,
@@ -88,8 +88,10 @@ function startRound(s, input) {
   s.round += 1;
   s.time = 0; s.sampleT = 0; s.bullets = []; s.readLabel = null; s.lastRivalShot = -9;
   s.player = fighter(240, C.arenaH / 2);
+  s.tuning = tuningFor(s.round);
   s.rival = fighter(C.arenaW - 240, C.arenaH / 2);
-  s.brain = createBrain(s.save.rivalLevel, s.save.bonusReads);
+  s.rival.hp = s.rival.maxHp = s.tuning.rivalHp;
+  s.brain = createBrain(s.save.rivalLevel, s.save.bonusReads, s.tuning);
   s.roundStats = { dashedLeft: false, farShot: false };
   s.phase = 'round'; s.phaseT = 0;
 }
@@ -105,10 +107,14 @@ function logAction(s, action) {
 }
 
 // ---------- simulation ----------
-function fire(s, who, tx, ty, owner) {
+function tuningFor(round) {
+  return C.difficulty.at(Math.min(Math.max(round, 1), C.difficulty.length) - 1);
+}
+
+function fire(s, who, tx, ty, owner, speed = C.bulletSpeed) {
   const dx = tx - who.x, dy = ty - who.y;
   const l = Math.hypot(dx, dy) || 1;
-  s.bullets.push({ x: who.x + dx / l * (C.radius + 6), y: who.y + dy / l * (C.radius + 6), vx: dx / l * C.bulletSpeed, vy: dy / l * C.bulletSpeed, owner });
+  s.bullets.push({ x: who.x + dx / l * (C.radius + 6), y: who.y + dy / l * (C.radius + 6), vx: dx / l * speed, vy: dy / l * speed, owner });
 }
 
 function moveFighter(f, mx, my, dt) {
@@ -173,16 +179,16 @@ function updateRival(s, dt) {
   const view = {
     me: { x: r.x, y: r.y, hp: r.hp, dashReady: r.dashCd <= 0, fireReady: r.fireCd <= 0 },
     foe: { x: p.x, y: p.y, vx: p.vx, vy: p.vy, hp: p.hp },
-    round: s.round, time: s.time, foeCtx: playerCtx(s), bullets: s.bullets,
+    round: s.round, time: s.time, foeCtx: playerCtx(s), bullets: s.bullets, rivalBulletSpeed: s.tuning.bulletSpeed,
   };
   const it = think(s.brain, view, s.model, dt);
   if (it.read) { s.readLabel = { text: it.read.label, t: 0, kind: it.read.kind, at: it.read.fireAt }; beep(880); }
   if (it.readShot) beep(440, 0.12);
   if (it.dash && startDash(r, it.dash.x, it.dash.y)) shake(s.feel, 2);
-  if (it.readShot) { fire(s, r, it.readShot.x, it.readShot.y, 'rival'); s.lastRivalShot = s.time; }
+  if (it.readShot) { fire(s, r, it.readShot.x, it.readShot.y, 'rival', s.tuning.bulletSpeed); s.lastRivalShot = s.time; }
   if (it.fire && (r.fireCd <= 0 || it.readShot)) {
-    fire(s, r, it.aimX, it.aimY, 'rival');
-    r.fireCd = C.fireCooldown * (s.round === 1 ? C.round1FireMult : 1);
+    fire(s, r, it.aimX, it.aimY, 'rival', s.tuning.bulletSpeed);
+    r.fireCd = s.tuning.fireCd;
     s.lastRivalShot = s.time;
   }
   r.aimX = it.aimX; r.aimY = it.aimY;
@@ -242,7 +248,7 @@ function matchOver(s) {
   return s.score.player >= need || s.score.rival >= need || s.round >= C.rounds;
 }
 
-function step(s, input, dt) {
+export function step(s, input, dt) {
   s.phaseT += dt;
   const click = input.clicked;
   input.clicked = false;
@@ -299,6 +305,8 @@ function drawHud(ctx, s) {
   for (let i = 0; i < C.hp; i++) {
     ctx.fillStyle = i < s.player.hp ? COLORS.player : COLORS.wall;
     ctx.fillRect(24 + i * 22, 20, 16, 8);
+  }
+  for (let i = 0; i < (s.rival.maxHp ?? C.hp); i++) {
     ctx.fillStyle = i < s.rival.hp ? COLORS.rival : COLORS.wall;
     ctx.fillRect(C.arenaW - 40 - i * 22, 20, 16, 8);
   }

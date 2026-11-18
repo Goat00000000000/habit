@@ -15,8 +15,10 @@ export function readInterval(round) {
   return 5 - (Math.min(round, 5) - 2) * (2 / 3);
 }
 
-export function createBrain(level, bonusReads) {
-  return { level, bonusReads, t: 0, history: [], sinceRead: 0, pending: null, strafe: 1, nextFlip: 1.8 };
+const DEFAULT_TUNING = { lead: 1, aimJitter: 0, dodgeChance: 1 };
+
+export function createBrain(level, bonusReads, tuning = DEFAULT_TUNING) {
+  return { level, bonusReads, tuning, rolled: new WeakSet(), t: 0, history: [], sinceRead: 0, pending: null, strafe: 1, nextFlip: 1.8 };
 }
 
 // Player state as the rival "sees" it: 250 ms old, like a human reaction.
@@ -100,16 +102,24 @@ export function think(brain, view, model, dt) {
   }
 
   // Baseline: dodge an incoming bullet, else shoot with some lead.
-  const threat = me.dashReady && incomingBullet(view);
+  // One dodge roll per incoming bullet, so dodgeChance is the share of bullets it tries to dodge.
+  let threat = me.dashReady && incomingBullet(view);
+  if (threat && !brain.rolled.has(threat)) {
+    brain.rolled.add(threat);
+    threat.dodge = Math.random() < brain.tuning.dodgeChance;
+  }
+  if (threat && !threat.dodge) threat = null;
   if (threat) {
     const s = Math.hypot(threat.vx, threat.vy);
     intent.dash = { x: -threat.vy / s * brain.strafe, y: threat.vx / s * brain.strafe };
   }
   if (me.fireReady) {
-    const lead = Math.min(1, 0.4 + 0.15 * brain.level);
-    const travel = dist / CONFIG.bulletSpeed;
-    intent.aimX = foe.x + foe.vx * travel * lead;
-    intent.aimY = foe.y + foe.vy * travel * lead;
+    // Higher rival levels aim slightly better on top of the round's tuning.
+    const lead = Math.min(1, brain.tuning.lead + 0.05 * (brain.level - 1));
+    const travel = dist / (view.rivalBulletSpeed ?? CONFIG.bulletSpeed);
+    const j = brain.tuning.aimJitter;
+    intent.aimX = foe.x + foe.vx * travel * lead + (Math.random() - 0.5) * 2 * j;
+    intent.aimY = foe.y + foe.vy * travel * lead + (Math.random() - 0.5) * 2 * j;
     intent.fire = true;
   }
   return intent;
