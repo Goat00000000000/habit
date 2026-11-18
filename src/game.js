@@ -7,6 +7,7 @@ import { clampDt, distBand, dir8 } from './util.js';
 import { PILLARS, pushOut, inPillar, segmentBlocked, nearCover } from './arena.js';
 import { createFeel, hitStop, slowMo, shake, flash, burst, ghost, updateFeel } from './feel.js';
 import { render, INK } from './ink.js';
+import { createSound } from './sound.js';
 
 // Effect colours: black ink for the player, seal red for the rival (see ink.js).
 const COLORS = { player: INK.ink, rival: INK.red };
@@ -67,20 +68,13 @@ function challengeLine(save) {
   return `Today: ${save.challenge.text}${save.challengeDone ? '  (done)' : ''}`;
 }
 
-// ---------- audio: one short beep for reads ----------
-let audio = null;
-function unlockAudio() {
-  try { audio ??= new (window.AudioContext || window.webkitAudioContext)(); audio.resume?.(); } catch { audio = null; }
-}
-function beep(freq = 880, len = 0.08) {
-  if (!audio) return;
-  try {
-    const o = audio.createOscillator(), g = audio.createGain();
-    o.type = 'square'; o.frequency.value = freq;
-    g.gain.setValueAtTime(0.06, audio.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + len);
-    o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + len);
-  } catch { /* no sound is fine */ }
+// ---------- sound ----------
+// Synthesised samurai sounds (see sound.js). Silent until the first click or tap, as browsers require.
+const sfx = createSound(() => new (window.AudioContext || window.webkitAudioContext)());
+try { sfx.setMuted(window.localStorage.getItem('habit.muted') === '1'); } catch { /* no storage: sound on */ }
+function toggleMute() {
+  sfx.setMuted(!sfx.isMuted());
+  try { window.localStorage.setItem('habit.muted', sfx.isMuted() ? '1' : '0'); } catch { /* fine */ }
 }
 
 function startRound(s, input) {
@@ -136,6 +130,7 @@ function startRun(s, input) {
   if (s.round === 0) s.round = Math.max(0, s.save.checkpoint - 1);
   s.stats = { reads: 0, readsBeaten: 0, guesses: 0, guessesBeaten: 0 };
   s.runBest = 0;
+  sfx.play('start');
   startRound(s, input);
 }
 
@@ -188,12 +183,14 @@ function updatePlayer(s, input, dt) {
     if (d.includes('W')) s.roundStats.dashedLeft = true;
     logAction(s, `dash:${d}`);
     shake(s.feel, 3);
+    sfx.play('dash');
   }
   const wantFire = input.mouseDown || input.fireOnce;
   input.fireOnce = false;
   if (wantFire && p.fireCd <= 0) {
     fire(s, p, p.aimX, p.aimY, 'player');
     p.fireCd = C.fireCooldown;
+    sfx.play('shoot');
     if (playerCtx(s).dist === 'far') s.roundStats.farShot = true;
     logAction(s, 'shoot');
   }
@@ -223,9 +220,8 @@ function updateRival(s, dt) {
   if (it.read) {
     s.readLabel = { text: it.read.label, t: 0, kind: it.read.kind, at: it.read.fireAt };
     if (it.read.kind === 'guess') s.stats.guesses += 1; else s.stats.reads += 1;
-    beep(it.read.kind === 'guess' ? 520 : 880);
+    sfx.play(it.read.kind === 'guess' ? 'guess' : 'read');
   }
-  if (it.readShot) beep(440, 0.12);
   if (it.dash && startDash(r, it.dash.x, it.dash.y)) shake(s.feel, 2);
   if (it.readShot) {
     s.activeRead = { id: ++s.readSeq, firedAt: s.time, hit: false, guess: s.readLabel?.kind === 'guess' };
@@ -236,6 +232,7 @@ function updateRival(s, dt) {
     const b = fire(s, r, it.aimX, it.aimY, 'rival', s.tuning.bulletSpeed);
     if (it.readShot) b.readId = s.activeRead.id;
     r.fireCd = s.tuning.fireCd;
+    sfx.play('rivalShoot');
     s.lastRivalShot = s.time;
   }
   r.aimX = it.aimX; r.aimY = it.aimY;
@@ -245,6 +242,7 @@ function updateRival(s, dt) {
 
 function hit(s, target, color) {
   target.hp -= 1; target.hitFlash = 0.12;
+  sfx.play(target === s.rival ? 'rivalHit' : 'playerHit');
   hitStop(s.feel, 0.06); flash(s.feel, 0.08); shake(s.feel, 6);
   burst(s.feel, target.x, target.y, color, 12);
   if (target.hp <= 0) slowMo(s.feel, 0.6, 0.25);
@@ -267,7 +265,7 @@ function resolveRead(s) {
   s.rival.x = Math.max(C.radius, Math.min(C.arenaW - C.radius, s.rival.x + dx / l * 18));
   s.rival.y = Math.max(C.radius, Math.min(C.arenaH - C.radius, s.rival.y + dy / l * 18));
   s.rival.hitFlash = 0.1;
-  beep(660, 0.08); setTimeout(() => beep(990, 0.12), 90);
+  sfx.play(r.guess ? 'unreadable' : 'outplayed');
 }
 
 function updateBullets(s, dt) {
@@ -295,6 +293,8 @@ function endRound(s) {
   const { player: p, rival: r } = s;
   s.roundWinner = p.hp > r.hp ? 'player' : r.hp > p.hp ? 'rival' : 'draw';
   s.outplayed = null; s.readLabel = null;
+  if (s.roundWinner === 'player') sfx.play('clear');
+  else if (s.roundWinner === 'rival') sfx.play('defeat');
   const pred = predictability(s.model);
   let challengeJustDone = false;
   if (s.roundWinner === 'player' && !s.save.challengeDone) {
@@ -394,7 +394,9 @@ export function start(canvas) {
   window.addEventListener('keyup', e => { const k = CODES[e.code]; if (k) input.keys.delete(k); });
   window.addEventListener('blur', () => { input.keys.clear(); input.mouseDown = false; });
   canvas.addEventListener('mousemove', e => { input.mouse = toArena(e.clientX, e.clientY); });
-  window.addEventListener('pointerdown', unlockAudio, { once: true });
+  window.addEventListener('pointerdown', () => sfx.unlock());
+  window.addEventListener('keydown', () => sfx.unlock());
+  window.addEventListener('keydown', e => { if (e.code === 'KeyM') toggleMute(); });
   canvas.addEventListener('mousedown', e => { input.mouse = toArena(e.clientX, e.clientY); input.mouseDown = true; input.clicked = true; });
   window.addEventListener('mouseup', () => { input.mouseDown = false; });
   canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -434,6 +436,7 @@ export function start(canvas) {
   canvas.addEventListener('touchend', touchEnd, { passive: false });
   canvas.addEventListener('touchcancel', touchEnd, { passive: false });
 
+  s.ui.soundOn = () => !sfx.isMuted();
   window.__habit = { state: s, input, toArena, debugHit: () => hit(s, s.rival, COLORS.player), debugEndRound: () => endRound(s) };
   let last = performance.now();
   function frame(now) {

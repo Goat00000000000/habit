@@ -14,7 +14,7 @@ The rival watches what you do: where you dodge when shot at, which way you move,
 
 ## Controls
 
-- Desktop: WASD move, mouse aim, click shoot, Space dash
+- Desktop: WASD move, mouse aim, click shoot, Space dash, M to mute
 - Mobile (landscape): left thumb moves, right thumb drags to aim and releases to shoot, quick swipe on the right to dash
 
 ## What is in it
@@ -45,7 +45,9 @@ The AI inside the game is not an LLM. It is a small pattern model (counts of wha
 - `src/game.js`: loop, input, levels, screens, drawing
 - `src/arena.js`: the three pillars (movement, bullets, line of sight, cover)
 - `src/save.js`: saving, welcome back line, daily challenge
-- `src/feel.js`: hit stop, screen shake, slow motion, particles
+- `src/feel.js`: hit stop, screen shake, slow motion, ink splatter
+- `src/ink.js`: the ink duel look (rice paper, ink fighters, red seal reads, report screens)
+- `src/sound.js`: synthesised samurai sounds (wooden clacks, taiko, blade swishes, sword clang, koto)
 - `src/config.js`: every tuning number, including the per-level difficulty curve
 
 ## Tests

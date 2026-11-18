@@ -292,7 +292,7 @@ function titleScreen(ctx, s, input) {
   write(ctx, s.ui.challenge.replace(/^Today: /, "Today's challenge: "), 84, y + 76, 15, { color: INK.inkSoft });
   write(ctx, input.touch
     ? 'Left thumb moves. Right thumb drags to aim and lifts to shoot. Swipe right side to dash.'
-    : 'WASD to move, mouse to aim, click to shoot, Space to dash.', 84, 500, 14, { color: INK.inkSoft });
+    : `WASD to move, mouse to aim, click to shoot, Space to dash. M turns sound ${s.ui.soundOn?.() === false ? 'on' : 'off'}.`, 84, 500, 14, { color: INK.inkSoft });
 }
 
 function reportScreen(ctx, s, input) {
