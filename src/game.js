@@ -425,12 +425,14 @@ export function start(canvas) {
   }
   fit();
   window.addEventListener('resize', fit);
+  // Read the physical key (e.code), not the letter: keyboard layouts and input tools can change e.key.
+  const CODES = { KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd', ArrowUp: 'arrowup', ArrowDown: 'arrowdown', ArrowLeft: 'arrowleft', ArrowRight: 'arrowright' };
   window.addEventListener('keydown', e => {
-    const k = e.key.toLowerCase();
-    if (k === ' ') { input.dashPressed = true; e.preventDefault(); }
-    input.keys.add(k);
+    if (e.code === 'Space') { input.dashPressed = true; e.preventDefault(); return; }
+    const k = CODES[e.code];
+    if (k) { input.keys.add(k); e.preventDefault(); }
   });
-  window.addEventListener('keyup', e => input.keys.delete(e.key.toLowerCase()));
+  window.addEventListener('keyup', e => { const k = CODES[e.code]; if (k) input.keys.delete(k); });
   window.addEventListener('blur', () => { input.keys.clear(); input.mouseDown = false; });
   canvas.addEventListener('mousemove', e => { input.mouse = toArena(e.clientX, e.clientY); });
   window.addEventListener('pointerdown', unlockAudio, { once: true });

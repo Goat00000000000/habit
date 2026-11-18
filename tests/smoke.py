@@ -61,6 +61,14 @@ def desktop(browser, url, errors):
     assert phase != "title", f"still on title, phase={phase}"
     assert page.evaluate("window.__habit.state.round >= 2 || window.__habit.state.time > 1"), "round clock did not run"
     page.screenshot(path=os.path.join(OUT, "desktop.png"))
+    # keys must work by physical position even when an input tool hides the letter (key='Process')
+    page.evaluate("(() => { const s = window.__habit.state; s.phase = 'round'; s.paused = false; s.player.hp = 3; s.time = 1; s.player.x = 480; s.player.y = 270; })()")
+    for code, axis, sign in [("KeyA", "vx", -1), ("KeyS", "vy", 1), ("KeyD", "vx", 1), ("KeyW", "vy", -1)]:
+        page.evaluate(f"window.dispatchEvent(new KeyboardEvent('keydown', {{key: 'Process', code: '{code}'}}))")
+        page.wait_for_timeout(80)
+        v = page.evaluate(f"window.__habit.state.player.{axis}")
+        page.evaluate(f"window.dispatchEvent(new KeyboardEvent('keyup', {{key: 'Process', code: '{code}'}}))")
+        assert v * sign > 0, f"{code} should move the player, {axis}={v}"
     # mouse held while the window loses focus must not keep firing
     page.mouse.down()
     page.evaluate("window.dispatchEvent(new Event('blur'))")
