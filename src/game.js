@@ -9,10 +9,20 @@ const COLORS = { bg: '#0d0f14', wall: '#2a3040', player: '#4fd1ff', rival: '#ff6
 
 // ---------- input ----------
 function createInput() {
-  return { keys: new Set(), mouse: { x: C.arenaW / 2, y: C.arenaH / 2 }, mouseDown: false, dashPressed: false, clicked: false };
+  return {
+    keys: new Set(), mouse: { x: C.arenaW / 2, y: C.arenaH / 2 }, mouseDown: false, dashPressed: false, clicked: false,
+    touch: false, stick: null, aimTouch: null, dashDir: null, fireOnce: false,
+  };
 }
 
 function moveVector(input) {
+  if (input.stick) {
+    const dx = input.stick.x - input.stick.ox, dy = input.stick.y - input.stick.oy;
+    const l = Math.hypot(dx, dy);
+    if (l < 8) return { x: 0, y: 0 };
+    const m = Math.min(1, l / 50);
+    return { x: dx / l * m, y: dy / l * m };
+  }
   const k = input.keys;
   let x = (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0);
   let y = (k.has('s') || k.has('arrowdown') ? 1 : 0) - (k.has('w') || k.has('arrowup') ? 1 : 0);
@@ -94,9 +104,19 @@ function startDash(f, x, y) {
 function updatePlayer(s, input, dt) {
   const p = s.player;
   const mv = moveVector(input);
-  p.aimX = input.mouse.x; p.aimY = input.mouse.y;
-  if (input.dashPressed && startDash(p, mv.x, mv.y)) logAction(s, `dash:${dir8(mv.x, mv.y)}`);
-  if (input.mouseDown && p.fireCd <= 0) {
+  if (input.touch) {
+    // Touch aim: drag direction from the right thumb, else auto-aim at the rival.
+    const a = input.aimTouch;
+    const dx = a ? a.x - a.sx : 0, dy = a ? a.y - a.sy : 0;
+    if (Math.hypot(dx, dy) > 15) { p.aimX = p.x + dx * 10; p.aimY = p.y + dy * 10; }
+    else if (!a) { p.aimX = s.rival.x; p.aimY = s.rival.y; }
+  } else { p.aimX = input.mouse.x; p.aimY = input.mouse.y; }
+  const dash = input.dashDir ?? mv;
+  input.dashDir = null;
+  if (input.dashPressed && startDash(p, dash.x, dash.y)) logAction(s, `dash:${dir8(dash.x, dash.y)}`);
+  const wantFire = input.mouseDown || input.fireOnce;
+  input.fireOnce = false;
+  if (wantFire && p.fireCd <= 0) {
     fire(s, p, p.aimX, p.aimY, 'player');
     p.fireCd = C.fireCooldown;
     logAction(s, 'shoot');
@@ -227,14 +247,26 @@ function drawRead(ctx, s) {
   ctx.restore();
 }
 
-function render(ctx, s) {
+function drawSticks(ctx, input) {
+  if (!input.touch) return;
+  ctx.strokeStyle = 'rgba(232,236,244,0.25)'; ctx.lineWidth = 2;
+  const st = input.stick;
+  if (st) {
+    ctx.beginPath(); ctx.arc(st.ox, st.oy, 50, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = 'rgba(232,236,244,0.25)';
+    ctx.beginPath(); ctx.arc(st.x, st.y, 18, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+function render(ctx, s, input) {
   ctx.fillStyle = COLORS.bg; ctx.fillRect(0, 0, C.arenaW, C.arenaH);
   ctx.strokeStyle = COLORS.wall; ctx.lineWidth = 2; ctx.strokeRect(1, 1, C.arenaW - 2, C.arenaH - 2);
   if (s.phase === 'title') {
     text(ctx, 'HABIT', C.arenaW / 2, 190, 72, COLORS.text, 'center', 800);
     text(ctx, 'A rival that learns how you fight.', C.arenaW / 2, 250, 20, COLORS.quiet, 'center', 400);
-    text(ctx, 'Click to start', C.arenaW / 2, 330, 22, COLORS.read);
-    text(ctx, 'WASD move · mouse aim · click shoot · Space dash', C.arenaW / 2, 470, 15, COLORS.quiet, 'center', 400);
+    text(ctx, input.touch ? 'Tap to start' : 'Click to start', C.arenaW / 2, 330, 22, COLORS.read);
+    text(ctx, input.touch ? 'Left thumb move · right thumb drag to aim, release to shoot · quick swipe to dash'
+      : 'WASD move · mouse aim · click shoot · Space dash', C.arenaW / 2, 470, 15, COLORS.quiet, 'center', 400);
     return;
   }
   for (const b of s.bullets) {
@@ -245,6 +277,7 @@ function render(ctx, s) {
   drawFighter(ctx, s.rival, COLORS.rival);
   drawRead(ctx, s);
   drawHud(ctx, s);
+  drawSticks(ctx, input);
   if (s.phase === 'roundEnd') {
     const msg = s.roundWinner === 'player' ? 'ROUND WON' : s.roundWinner === 'rival' ? 'ROUND LOST' : 'DRAW';
     text(ctx, msg, C.arenaW / 2, C.arenaH / 2, 48, COLORS.text, 'center', 800);
@@ -252,7 +285,7 @@ function render(ctx, s) {
   if (s.phase === 'report' || s.phase === 'matchEnd') {
     ctx.fillStyle = 'rgba(13,15,20,0.88)'; ctx.fillRect(0, 0, C.arenaW, C.arenaH);
     text(ctx, s.phase === 'report' ? 'HABIT REPORT' : 'MATCH OVER', C.arenaW / 2, 200, 36, COLORS.text, 'center', 800);
-    text(ctx, 'Click to continue', C.arenaW / 2, 420, 18, COLORS.read);
+    text(ctx, input.touch ? 'Tap to continue' : 'Click to continue', C.arenaW / 2, 420, 18, COLORS.read);
   }
 }
 
@@ -261,14 +294,21 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
   const s = newState();
   const input = createInput();
-  let scale = 1;
+  let scale = 1, dpr = 1;
+  const rotate = document.getElementById('rotate');
+  const coarse = window.matchMedia('(pointer: coarse)');
 
   function fit() {
     scale = Math.min(window.innerWidth / C.arenaW, window.innerHeight / C.arenaH);
-    canvas.width = C.arenaW; canvas.height = C.arenaH;
+    dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(C.arenaW * scale * dpr); canvas.height = Math.round(C.arenaH * scale * dpr);
     canvas.style.width = `${C.arenaW * scale}px`;
     canvas.style.height = `${C.arenaH * scale}px`;
     canvas.style.marginTop = `${(window.innerHeight - C.arenaH * scale) / 2}px`;
+    const portrait = coarse.matches && window.innerHeight > window.innerWidth;
+    s.paused = portrait;
+    if (rotate) rotate.style.display = portrait ? 'flex' : 'none';
+    input.touch = input.touch || coarse.matches;
   }
   function toArena(x, y) {
     const r = canvas.getBoundingClientRect();
@@ -288,13 +328,49 @@ export function start(canvas) {
   window.addEventListener('mouseup', () => { input.mouseDown = false; });
   canvas.addEventListener('contextmenu', e => e.preventDefault());
 
+  // Touch: left half = floating move stick; right half = drag to aim, release to fire, quick swipe to dash.
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    input.touch = true;
+    if (s.phase !== 'round') { input.clicked = true; return; }
+    for (const t of e.changedTouches) {
+      const a = toArena(t.clientX, t.clientY);
+      if (a.x < C.arenaW / 2 && !input.stick) input.stick = { id: t.identifier, ox: a.x, oy: a.y, x: a.x, y: a.y };
+      else if (!input.aimTouch) input.aimTouch = { id: t.identifier, sx: a.x, sy: a.y, x: a.x, y: a.y, t0: performance.now() };
+    }
+  }, { passive: false });
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      const a = toArena(t.clientX, t.clientY);
+      if (input.stick?.id === t.identifier) { input.stick.x = a.x; input.stick.y = a.y; }
+      if (input.aimTouch?.id === t.identifier) { input.aimTouch.x = a.x; input.aimTouch.y = a.y; }
+    }
+  }, { passive: false });
+  function touchEnd(e) {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (input.stick?.id === t.identifier) input.stick = null;
+      const a = input.aimTouch;
+      if (a?.id === t.identifier) {
+        const dx = a.x - a.sx, dy = a.y - a.sy, d = Math.hypot(dx, dy);
+        if (d > 60 && performance.now() - a.t0 < 150) { input.dashPressed = true; input.dashDir = { x: dx / d, y: dy / d }; }
+        else input.fireOnce = true;
+        input.aimTouch = null;
+      }
+    }
+  }
+  canvas.addEventListener('touchend', touchEnd, { passive: false });
+  canvas.addEventListener('touchcancel', touchEnd, { passive: false });
+
   window.__habit = { state: s, toArena };
   let last = performance.now();
   function frame(now) {
     const dt = clampDt((now - last) / 1000);
     last = now;
     step(s, input, dt);
-    render(ctx, s);
+    ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+    render(ctx, s, input);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

@@ -50,12 +50,65 @@ def desktop(browser, url, errors):
     return page
 
 
+MOBILE = dict(has_touch=True, is_mobile=True, device_scale_factor=3)
+
+
+def mobile_landscape(browser, url, errors):
+    page = open_page(browser, url, errors, viewport={"width": 844, "height": 390}, **MOBILE)
+    box = page.evaluate("(() => { const r = document.querySelector('canvas').getBoundingClientRect(); return [r.width, r.height]; })()")
+    assert abs(box[1] - 390) < 2, f"canvas should fill height, got {box}"
+    assert not page.evaluate("window.__habit.state.paused"), "landscape should not pause"
+    page.touchscreen.tap(422, 195)  # start
+    page.wait_for_timeout(300)
+    assert page.evaluate("window.__habit.state.phase") == "round", "tap should start the round"
+    # left stick: hold a touch and drag right via CDP so the move stick is exercised
+    cdp = page.context.new_cdp_session(page)
+    def touch(kind, pts):
+        cdp.send("Input.dispatchTouchEvent", {"type": kind, "touchPoints": [{"x": x, "y": y, "id": i} for i, (x, y) in enumerate(pts)]})
+    touch("touchStart", [(150, 250)])
+    for i in range(10):
+        touch("touchMove", [(150 + 8 * i, 250)])
+        page.wait_for_timeout(30)
+    page.wait_for_timeout(400)
+    vx = page.evaluate("window.__habit.state.player.vx")
+    touch("touchEnd", [])
+    assert vx > 0, f"left stick dragged right should move right, vx={vx}"
+    # right side: quick swipe = dash
+    touch("touchStart", [(650, 200)])
+    touch("touchMove", [(560, 200)])
+    touch("touchEnd", [])
+    page.wait_for_timeout(50)
+    assert page.evaluate("window.__habit.state.player.dashCd") > 0, "swipe should dash"
+    page.screenshot(path=os.path.join(OUT, "mobile.png"))
+
+
+def mobile_portrait(browser, url, errors):
+    page = open_page(browser, url, errors, viewport={"width": 390, "height": 844}, **MOBILE)
+    assert page.is_visible("#rotate"), "portrait should show the rotate prompt"
+    assert page.evaluate("window.__habit.state.paused"), "portrait should pause"
+    page.set_viewport_size({"width": 844, "height": 390})
+    page.wait_for_timeout(200)
+    assert not page.is_visible("#rotate"), "rotating back should hide the prompt"
+    assert not page.evaluate("window.__habit.state.paused"), "rotating back should resume"
+
+
+def resize(page):
+    page.set_viewport_size({"width": 800, "height": 600})
+    page.wait_for_timeout(200)
+    r = page.evaluate("(() => { const r = document.querySelector('canvas').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
+    a = page.evaluate(f"window.__habit.toArena({r[0]}, {r[1]})")
+    assert abs(a["x"] - 480) < 2 and abs(a["y"] - 270) < 2, f"centre should map to arena centre, got {a}"
+
+
 def main():
     httpd, url = serve()
     errors = []
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path="/usr/bin/google-chrome", headless=True)
-        desktop(browser, url, errors)
+        page = desktop(browser, url, errors)
+        resize(page)
+        mobile_landscape(browser, url, errors)
+        mobile_portrait(browser, url, errors)
         browser.close()
     httpd.shutdown()
     if errors:

@@ -8,10 +8,13 @@
   <style>
     html, body { margin: 0; height: 100%; background: #0d0f14; overflow: hidden; touch-action: none; }
     canvas { display: block; margin: 0 auto; }
+    #rotate { display: none; position: fixed; inset: 0; background: #0d0f14; color: #e8ecf4;
+      font: 600 22px system-ui, sans-serif; align-items: center; justify-content: center; text-align: center; padding: 24px; }
   </style>
 </head>
 <body>
   <canvas id="game"></canvas>
+  <div id="rotate">Rotate your phone to play</div>
   <script type="module">
     import { start } from './src/game.js';
     start(document.getElementById('game'));
