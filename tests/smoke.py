@@ -156,9 +156,9 @@ def resize(page):
 
 SEEDED = {
     "model": {"counts": {
-        "mid|1|0|*": {"dash:W": 10},
-        "mid|0|0|*": {"move:E": 10},
-        "far|0|0|*": {"still": 8},
+        "mid|1|0|0|*": {"dash:W": 10},
+        "mid|0|0|0|*": {"move:E": 10},
+        "far|0|0|0|*": {"still": 8},
     }},
     "rivalLevel": 2, "lastDay": "2020-01-01", "bonusReads": 0, "challengeDone": False,
 }

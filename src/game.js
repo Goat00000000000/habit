@@ -4,6 +4,7 @@ import { record, decay, topHabits, predictability } from './habit.js';
 import { loadSave, writeSave, welcomeLine } from './save.js';
 import { createBrain, think } from './rival.js';
 import { clampDt, distBand, dir8 } from './util.js';
+import { PILLARS, pushOut, inPillar, segmentBlocked, nearCover } from './arena.js';
 import { createFeel, hitStop, slowMo, shake, flash, burst, ghost, updateFeel, cameraOffset, drawFeel } from './feel.js';
 
 const COLORS = { bg: '#0d0f14', wall: '#2a3040', player: '#4fd1ff', rival: '#ff6b4a', text: '#e8ecf4', quiet: '#8a93a6', read: '#ffd84a' };
@@ -101,7 +102,7 @@ function startRound(s, input) {
 
 function playerCtx(s) {
   const d = Math.hypot(s.player.x - s.rival.x, s.player.y - s.rival.y);
-  return { dist: distBand(d), shotAt: s.time - s.lastRivalShot < 0.6, lowHp: s.player.hp <= 1, last: s.lastAction };
+  return { dist: distBand(d), shotAt: s.time - s.lastRivalShot < 0.6, lowHp: s.player.hp <= 1, cover: nearCover(s.player.x, s.player.y), last: s.lastAction };
 }
 
 function logAction(s, action) {
@@ -134,6 +135,8 @@ function moveFighter(f, mx, my, dt) {
   }
   f.x = Math.max(C.radius, Math.min(C.arenaW - C.radius, f.x + f.vx * dt));
   f.y = Math.max(C.radius, Math.min(C.arenaH - C.radius, f.y + f.vy * dt));
+  const out = pushOut(f.x, f.y, C.radius);
+  f.x = out.x; f.y = out.y;
 }
 
 function startDash(f, x, y) {
@@ -185,6 +188,7 @@ function updateRival(s, dt) {
     me: { x: r.x, y: r.y, hp: r.hp, dashReady: r.dashCd <= 0, fireReady: r.fireCd <= 0 },
     foe: { x: p.x, y: p.y, vx: p.vx, vy: p.vy, hp: p.hp },
     round: s.round, time: s.time, foeCtx: playerCtx(s), bullets: s.bullets, rivalBulletSpeed: s.tuning.bulletSpeed,
+    blocked: segmentBlocked(r.x, r.y, p.x, p.y),
   };
   const it = think(s.brain, view, s.model, dt);
   if (it.read) { s.readLabel = { text: it.read.label, t: 0, kind: it.read.kind, at: it.read.fireAt }; s.stats.reads += 1; beep(880); }
@@ -238,6 +242,7 @@ function updateBullets(s, dt) {
   for (const b of s.bullets) {
     b.x += b.vx * dt; b.y += b.vy * dt;
     const color = b.owner === 'player' ? COLORS.player : COLORS.rival;
+    if (inPillar(b.x, b.y)) { burst(s.feel, b.x, b.y, color, 6, 140); continue; }
     if (b.x < 0 || b.y < 0 || b.x > C.arenaW || b.y > C.arenaH) {
       burst(s.feel, Math.max(0, Math.min(C.arenaW, b.x)), Math.max(0, Math.min(C.arenaH, b.y)), color, 6, 140);
       continue;
@@ -379,7 +384,9 @@ function drawRead(ctx, s) {
   if (!r || r.t > 1.2) return;
   const pop = Math.min(1, r.t / 0.1);
   ctx.save();
-  ctx.translate(s.rival.x, s.rival.y - 44);
+  // Above the rival, or below it when it hugs the top edge, and never off the sides.
+  const lx = Math.max(110, Math.min(C.arenaW - 110, s.rival.x));
+  ctx.translate(lx, s.rival.y < 80 ? s.rival.y + 44 : s.rival.y - 44);
   ctx.scale(0.6 + 0.4 * pop, 0.6 + 0.4 * pop);
   ctx.globalAlpha = r.t > 0.9 ? Math.max(0, 1 - (r.t - 0.9) / 0.3) : 1;
   text(ctx, r.text, 0, 0, 18, COLORS.read, 'center', 800);
@@ -414,6 +421,8 @@ function render(ctx, s, input) {
   const cam = cameraOffset(s.feel);
   ctx.save();
   ctx.translate(cam.x, cam.y);
+  ctx.fillStyle = '#242c3d'; ctx.strokeStyle = '#3a4459'; ctx.lineWidth = 2;
+  for (const p of PILLARS) { ctx.fillRect(p.x, p.y, p.w, p.h); ctx.strokeRect(p.x, p.y, p.w, p.h); }
   for (const b of s.bullets) {
     ctx.fillStyle = b.owner === 'player' ? COLORS.player : COLORS.rival;
     ctx.beginPath(); ctx.arc(b.x, b.y, C.bulletRadius, 0, Math.PI * 2); ctx.fill();

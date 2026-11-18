@@ -26,7 +26,7 @@ export const CONFIG = Object.freeze({
   // fireCd = seconds between rival shots, lead = how much it aims ahead of you (0-1),
   // aimJitter = random aim error in px, dodgeChance = chance it dashes away from each of your bullets.
   difficulty: [
-    { rivalHp: 2, fireCd: 2.0, bulletSpeed: 280, lead: 0.0, aimJitter: 90, dodgeChance: 0 },
+    { rivalHp: 2, fireCd: 1.5, bulletSpeed: 320, lead: 0.0, aimJitter: 70, dodgeChance: 0 },
     { rivalHp: 3, fireCd: 1.2, bulletSpeed: 360, lead: 0.1, aimJitter: 60, dodgeChance: 0 },
     { rivalHp: 3, fireCd: 1.0, bulletSpeed: 420, lead: 0.4, aimJitter: 40, dodgeChance: 0.25 },
     { rivalHp: 3, fireCd: 0.8, bulletSpeed: 470, lead: 0.7, aimJitter: 20, dodgeChance: 0.45 },

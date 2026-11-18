@@ -96,3 +96,9 @@ test('deserialize drops badly shaped buckets and counts so decay cannot crash', 
   assert.deepEqual(m, { counts: { 'mid|0|0|*': { 'move:E': 3 } } });
   assert.doesNotThrow(() => decay(m));
 });
+
+test('moving near cover becomes a cover habit', () => {
+  const m = createModel();
+  many(m, { dist: 'mid', shotAt: false, lowHp: false, cover: true, last: null }, 'move:E', 10);
+  assert.equal(topHabits(m)[0].text, 'Moves right from cover');
+});

@@ -73,7 +73,14 @@ export function think(brain, view, model, dt) {
   const dist = Math.hypot(dx, dy) || 1;
   const nx = dx / dist, ny = dy / dist;
   if (brain.t >= brain.nextFlip) { brain.strafe *= -1; brain.nextFlip = brain.t + 1.5 + ((brain.t * 7.3) % 1); }
-  const push = dist > 300 ? 1 : dist < 220 ? -1 : 0;
+  // Stuck on a pillar (barely moved in 0.4 s)? Strafe the other way to get around it.
+  brain.track ??= { x: me.x, y: me.y, t: brain.t };
+  if (brain.t - brain.track.t > 0.4) {
+    if (Math.hypot(me.x - brain.track.x, me.y - brain.track.y) < 20) { brain.strafe *= -1; brain.nextFlip = brain.t + 1.2; }
+    brain.track = { x: me.x, y: me.y, t: brain.t };
+  }
+  // Close in when out of range or when a pillar blocks the shot.
+  const push = dist > 300 || (view.blocked && dist > 180) ? 1 : dist < 220 ? -1 : 0;
   intent.moveX = nx * push - ny * brain.strafe;
   intent.moveY = ny * push + nx * brain.strafe;
   const len = Math.hypot(intent.moveX, intent.moveY) || 1;
@@ -91,7 +98,7 @@ export function think(brain, view, model, dt) {
   }
 
   const interval = Math.max(2, readInterval(view.round) - 0.5 * brain.bonusReads);
-  if (brain.sinceRead >= interval && me.fireReady) {
+  if (brain.sinceRead >= interval && me.fireReady && !view.blocked) {
     const read = tryRead(brain, view, model, foe);
     if (read) {
       brain.sinceRead = 0;
@@ -113,7 +120,7 @@ export function think(brain, view, model, dt) {
     const s = Math.hypot(threat.vx, threat.vy);
     intent.dash = { x: -threat.vy / s * brain.strafe, y: threat.vx / s * brain.strafe };
   }
-  if (me.fireReady) {
+  if (me.fireReady && !view.blocked) {
     // Higher rival levels aim slightly better on top of the round's tuning.
     const lead = Math.min(1, brain.tuning.lead + 0.05 * (brain.level - 1));
     const travel = dist / (view.rivalBulletSpeed ?? CONFIG.bulletSpeed);

@@ -1,5 +1,5 @@
 // Habit model: counts what the player does in each situation.
-// Situation (Ctx) = { dist, shotAt, lowHp, last }. Action = 'move:W', 'dash:NE', 'shoot', 'still'.
+// Situation (Ctx) = { dist, shotAt, lowHp, cover, last }. Action = 'move:W', 'dash:NE', 'shoot', 'still'.
 // Each event is counted twice: under the full situation, and under a coarse one
 // without `last`. Predictions use the full one when it has enough samples,
 // otherwise fall back to the coarse one.
@@ -15,7 +15,7 @@ export function createModel() {
 }
 
 export function ctxKey(ctx) {
-  return `${ctx.dist}|${ctx.shotAt ? 1 : 0}|${ctx.lowHp ? 1 : 0}|${ctx.last ?? '-'}`;
+  return `${ctx.dist}|${ctx.shotAt ? 1 : 0}|${ctx.lowHp ? 1 : 0}|${ctx.cover ? 1 : 0}|${ctx.last ?? '-'}`;
 }
 
 function coarseKey(ctx) {
@@ -66,12 +66,13 @@ export function decay(model, factor = CONFIG.decayPerRound) {
 }
 
 function describe(key, action) {
-  const [dist, shotAt] = key.split('|');
+  const [dist, shotAt, , cover] = key.split('|');
   if (action === 'still') return 'Stands still';
   if (action === 'shoot') return `Shoots at ${dist} range`;
   const [kind, dir] = action.split(':');
   const word = DIR_WORDS[dir];
   if (kind === 'dash') return shotAt === '1' ? `Dodges ${word} when shot at` : `Dashes ${word} at ${dist} range`;
+  if (cover === '1') return `Moves ${word} from cover`;
   return `Moves ${word} at ${dist} range`;
 }
 

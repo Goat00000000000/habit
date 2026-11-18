@@ -69,3 +69,13 @@ test('the read shot fires 0.3 s after the telegraph', () => {
   assert.ok(Math.abs(gap - 0.3) <= 0.05, `gap was ${gap}`);
   assert.deepEqual(punishes[0].shot, reads[0].read.fireAt);
 });
+
+test('no shots and no reads while a pillar blocks line of sight', () => {
+  const brain = createBrain(1, 0);
+  const m = dodgerModel();
+  for (let t = 0; t < 20; t += 0.05) {
+    const it = think(brain, { ...view(4, t), blocked: true }, m, 0.05);
+    assert.equal(it.fire, false);
+    assert.equal(it.read, null);
+  }
+});
