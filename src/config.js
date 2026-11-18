@@ -11,11 +11,12 @@ export const CONFIG = Object.freeze({
   dashTime: 0.15,        // s, invincible while dashing
   dashSpeed: 1066,       // px/s (about 160 px per dash)
   dashCooldown: 1.2,     // s
-  roundTime: 45,         // s
-  rounds: 5,             // best of 5
+  roundTime: 45,         // s per level
+  checkpointEvery: 5,    // levels
   sampleEvery: 0.25,     // s between habit samples
   reactionTime: 0.25,    // s rival lag
-  readThreshold: 0.55,   // top action share needed to commit a read
+  readThreshold: 0.55,   // dash: top action share needed to commit a read (2 sensible choices)
+  readThresholdMove: 0.4, // movement: 9 possible directions, so a lower bar still means a clear habit
   readMinSamples: 6,
   readTelegraph: 0.3,    // s between READ text and punish
   firstReadAfter: 2,     // s into a round before the first read is allowed

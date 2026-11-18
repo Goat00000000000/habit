@@ -3,9 +3,9 @@ import { CONFIG } from './config.js';
 import { createModel, serialize, deserialize, topHabits } from './habit.js';
 
 export const CHALLENGES = [
-  { id: 'lowPred', text: 'Win a round under 50% predictability' },
-  { id: 'noLeftDash', text: 'Win a round without dashing left' },
-  { id: 'noFarShot', text: 'Win a round without shooting from far range' },
+  { id: 'lowPred', text: 'Clear a level under 50% predictability' },
+  { id: 'noLeftDash', text: 'Clear a level without dashing left' },
+  { id: 'noFarShot', text: 'Clear a level without shooting from far range' },
 ];
 
 function challengeFor(today) {
@@ -30,6 +30,8 @@ export function loadSave(storage, today) {
   return {
     model: raw?.model ? deserialize(JSON.stringify(raw.model)) : createModel(),
     rivalLevel: Number.isFinite(raw?.rivalLevel) ? raw.rivalLevel : 1,
+    bestLevel: Number.isFinite(raw?.bestLevel) ? raw.bestLevel : 0,
+    checkpoint: Number.isFinite(raw?.checkpoint) && raw.checkpoint >= 1 ? raw.checkpoint : 1,
     lastDay,
     today,
     isNewDay,
@@ -44,6 +46,8 @@ export function writeSave(storage, save) {
     storage.setItem(CONFIG.saveKey, JSON.stringify({
       model: JSON.parse(serialize(save.model)),
       rivalLevel: save.rivalLevel,
+      bestLevel: save.bestLevel,
+      checkpoint: save.checkpoint,
       lastDay: save.today,
       bonusReads: save.bonusReads,
       challengeDone: save.challengeDone,

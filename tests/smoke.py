@@ -202,6 +202,13 @@ def returning_player(browser, url, errors):
     page.wait_for_function("window.__habit.state.outplayed !== null", timeout=2000)
     page.wait_for_timeout(150)
     page.screenshot(path=os.path.join(OUT, "outplayed.png"))
+    # lose the level: the run ends and the run-over screen shows the level reached
+    page.evaluate("(() => { const s = window.__habit.state; s.player.hp = 0; })()")
+    page.wait_for_function("window.__habit.state.phase === 'report'", timeout=4000)
+    page.screenshot(path=os.path.join(OUT, "report-loss.png"))
+    page.mouse.click(640, 360)
+    page.wait_for_function("window.__habit.state.phase === 'runOver'", timeout=2000)
+    page.screenshot(path=os.path.join(OUT, "runover.png"))
 
 
 def main():

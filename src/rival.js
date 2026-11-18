@@ -10,12 +10,14 @@ const DIRS = {
 };
 const WORDS = { N: 'UP', S: 'DOWN', E: 'RIGHT', W: 'LEFT', NE: 'UP-RIGHT', NW: 'UP-LEFT', SE: 'DOWN-RIGHT', SW: 'DOWN-LEFT' };
 
-export function readInterval(round) {
-  if (round <= 1) return Infinity;
-  return 5 - (Math.min(round, 5) - 2) * (2 / 3);
+// Seconds between reads at each level: none at 1, 5 s at 2 down to 3 s at 5, then faster to a 1.5 s floor.
+export function readInterval(level) {
+  if (level <= 1) return Infinity;
+  if (level <= 5) return 5 - (level - 2) * (2 / 3);
+  return Math.max(1.5, 3 - 0.25 * (level - 5));
 }
 
-const DEFAULT_TUNING = { lead: 1, aimJitter: 0, dodgeChance: 1 };
+const DEFAULT_TUNING = { lead: 1, aimJitter: 0, dodgeChance: 1, readDash: CONFIG.readThreshold, readMove: CONFIG.readThresholdMove };
 
 export function createBrain(level, bonusReads, tuning = DEFAULT_TUNING) {
     return { level, bonusReads, tuning, rolled: new WeakSet(), t: 0, history: [], sinceRead: 0, firstRead: true, pending: null, strafe: 1, nextFlip: 1.8 };
@@ -30,14 +32,14 @@ function sensed(brain, foe) {
 
 function tryRead(brain, view, model, foe) {
   const dodge = predict(model, { ...view.foeCtx, shotAt: true }, 'dash');
-  if (isConfident(dodge)) {
+  if (isConfident(dodge, brain.tuning.readDash ?? CONFIG.readThreshold)) {
     const dir = dodge.action.split(':')[1];
     const d = CONFIG.dashSpeed * CONFIG.dashTime;
     const [dx, dy] = DIRS[dir];
     return { label: `READ: DASH ${WORDS[dir]}`, kind: 'dodge', fireAt: { x: foe.x + dx * d, y: foe.y + dy * d } };
   }
   const move = predict(model, view.foeCtx, 'move');
-  if (isConfident(move) && move.action.startsWith('move:')) {
+  if (isConfident(move, brain.tuning.readMove ?? CONFIG.readThresholdMove) && move.action.startsWith('move:')) {
     const dir = move.action.split(':')[1];
     const [dx, dy] = DIRS[dir];
     const travel = Math.hypot(foe.x - view.me.x, foe.y - view.me.y) / CONFIG.bulletSpeed;

@@ -60,8 +60,8 @@ export function predict(model, ctx, kind) {
   return bestIn(model.counts[ALL], kind) ?? coarse ?? full;
 }
 
-export function isConfident(pred) {
-  return !!pred && pred.p > CONFIG.readThreshold && pred.n >= CONFIG.readMinSamples;
+export function isConfident(pred, threshold = CONFIG.readThreshold) {
+  return !!pred && pred.p > threshold && pred.n >= CONFIG.readMinSamples;
 }
 
 export function decay(model, factor = CONFIG.decayPerRound) {

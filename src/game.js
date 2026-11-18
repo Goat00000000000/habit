@@ -2,7 +2,7 @@
 import { CONFIG as C } from './config.js';
 import { record, decay, topHabits, predictability } from './habit.js';
 import { loadSave, writeSave, welcomeLine } from './save.js';
-import { createBrain, think } from './rival.js';
+import { createBrain, think, readInterval } from './rival.js';
 import { clampDt, distBand, dir8 } from './util.js';
 import { PILLARS, pushOut, inPillar, segmentBlocked, nearCover } from './arena.js';
 import { createFeel, hitStop, slowMo, shake, flash, burst, ghost, updateFeel, cameraOffset, drawFeel } from './feel.js';
@@ -49,7 +49,8 @@ function safeStorage() {
 export function newState() {
   const save = loadSave(safeStorage(), today());
   return {
-    phase: 'title', phaseT: 0, round: 0, score: { player: 0, rival: 0 }, time: 0,
+    // `round` is the current level number. 0 = no run in progress.
+    phase: 'title', phaseT: 0, round: 0, time: 0, runBest: 0,
     player: fighter(240, C.arenaH / 2), rival: fighter(C.arenaW - 240, C.arenaH / 2),
     bullets: [], save, model: save.model, brain: null,
     sampleT: 0, lastAction: null, lastRivalShot: -9, readLabel: null, roundWinner: null, paused: false,
@@ -87,9 +88,10 @@ function startRound(s, input) {
     input.aimTouch = null; input.stick = null; input.releaseAim = null; input.mouseDown = false;
   }
   s.killTimer = null;
-  if (s.round === 0) s.stats = { reads: 0, readsBeaten: 0 };
   s.activeRead = null; s.outplayed = null;
   s.round += 1;
+  if (s.round > s.save.bestLevel) s.save.bestLevel = s.round;
+  if (s.round % C.checkpointEvery === 0) s.save.checkpoint = Math.max(s.save.checkpoint, s.round);
   s.time = 0; s.sampleT = 0; s.bullets = []; s.readLabel = null; s.lastRivalShot = -9;
   s.player = fighter(240, C.arenaH / 2);
   s.tuning = tuningFor(s.round);
@@ -111,8 +113,27 @@ function logAction(s, action) {
 }
 
 // ---------- simulation ----------
-function tuningFor(round) {
-  return C.difficulty.at(Math.min(Math.max(round, 1), C.difficulty.length) - 1);
+// Levels 1-5 use the table. Past that the rival keeps level 5's aim but gets tougher
+// (+1 HP every 3 levels, more dodges) and smarter (reads more often, with less evidence).
+function tuningFor(level) {
+  const base = C.difficulty.at(Math.min(Math.max(level, 1), C.difficulty.length) - 1);
+  const extra = Math.max(0, level - C.difficulty.length);
+  return {
+    ...base,
+    rivalHp: base.rivalHp + Math.floor(extra / 3),
+    dodgeChance: Math.min(0.85, base.dodgeChance + 0.03 * extra),
+    readInterval: readInterval(level),
+    readDash: Math.max(0.45, C.readThreshold - 0.015 * extra),
+    readMove: Math.max(0.3, C.readThresholdMove - 0.015 * extra),
+  };
+}
+
+// A run starts at level 1, or at the highest checkpoint reached.
+function startRun(s, input) {
+  if (s.round === 0) s.round = Math.max(0, s.save.checkpoint - 1);
+  s.stats = { reads: 0, readsBeaten: 0 };
+  s.runBest = 0;
+  startRound(s, input);
 }
 
 function fire(s, who, tx, ty, owner, speed = C.bulletSpeed) {
@@ -261,7 +282,7 @@ function updateBullets(s, dt) {
 function endRound(s) {
   const { player: p, rival: r } = s;
   s.roundWinner = p.hp > r.hp ? 'player' : r.hp > p.hp ? 'rival' : 'draw';
-  if (s.roundWinner !== 'draw') s.score[s.roundWinner] += 1;
+  s.outplayed = null; s.readLabel = null;
   const pred = predictability(s.model);
   let challengeJustDone = false;
   if (s.roundWinner === 'player' && !s.save.challengeDone) {
@@ -280,17 +301,13 @@ function endRound(s) {
   s.phase = 'roundEnd'; s.phaseT = 0;
 }
 
-function matchOver(s) {
-  const need = Math.ceil(C.rounds / 2);
-  return s.score.player >= need || s.score.rival >= need || s.round >= C.rounds;
-}
 
 export function step(s, input, dt) {
   s.phaseT += dt;
   const click = input.clicked;
   input.clicked = false;
   if (s.paused) return;
-  if (s.phase === 'title') { if (click) startRound(s, input); }
+  if (s.phase === 'title') { if (click) startRun(s, input); }
   else if (s.phase === 'round') {
     s.time += dt;
     if (s.readLabel) s.readLabel.t += dt;
@@ -308,16 +325,21 @@ export function step(s, input, dt) {
   } else if (s.phase === 'roundEnd') { if (s.phaseT > 1.2) { s.phase = 'report'; s.phaseT = 0; } }
   else if (s.phase === 'report') {
     if (click || s.phaseT > 5) {
-      if (matchOver(s)) {
-        if (s.score.player > s.score.rival) s.save.rivalLevel += 1;
+      if (s.roundWinner === 'rival') {
+        // Run over. The rival levels up whenever it ends a run past your checkpoint.
+        if (s.round > s.save.checkpoint) s.save.rivalLevel += 1;
         const [top] = topHabits(s.model, 1);
         s.ui.matchLine = top ? `"${top.text}. ${top.p}% of the time. I noticed."` : '"You are hard to read. For now."';
+        s.ui.runLevel = s.round;
         writeSave(safeStorage(), s.save);
-        s.phase = 'matchEnd'; s.phaseT = 0;
-      } else startRound(s, input);
+        s.phase = 'runOver'; s.phaseT = 0;
+      } else {
+        if (s.roundWinner === 'draw') s.round -= 1; // replay the same level
+        startRound(s, input);
+      }
     }
-  } else if (s.phase === 'matchEnd') {
-    if (click && s.phaseT > 0.5) { s.round = 0; s.score = { player: 0, rival: 0 }; startRound(s, input); }
+  } else if (s.phase === 'runOver') {
+    if (click && s.phaseT > 0.5) { s.round = 0; startRun(s, input); }
   }
   input.dashPressed = false;
 }
@@ -349,7 +371,8 @@ function drawHud(ctx, s) {
     ctx.fillStyle = i < s.rival.hp ? COLORS.rival : COLORS.wall;
     ctx.fillRect(C.arenaW - 40 - i * 22, 20, 16, 8);
   }
-  text(ctx, `ROUND ${s.round}   ${s.score.player} - ${s.score.rival}`, C.arenaW / 2, 24, 16, COLORS.quiet);
+  text(ctx, `LEVEL ${s.round}`, C.arenaW / 2, 24, 16, COLORS.text);
+  text(ctx, `Best ${s.save.bestLevel}`, C.arenaW / 2 + 90, 24, 13, COLORS.quiet, 'left', 400);
   text(ctx, `${Math.max(0, Math.ceil(C.roundTime - s.time))}`, C.arenaW / 2, 48, 14, COLORS.quiet);
 }
 
@@ -411,7 +434,9 @@ function render(ctx, s, input) {
     text(ctx, 'HABIT', C.arenaW / 2, 190, 72, COLORS.text, 'center', 800);
     text(ctx, 'A rival that learns how you fight.', C.arenaW / 2, 250, 20, COLORS.quiet, 'center', 400);
     if (s.ui.welcome) text(ctx, s.ui.welcome, C.arenaW / 2, 300, 17, COLORS.rival, 'center', 600);
-    if (s.save.rivalLevel > 1) text(ctx, `Rival level ${s.save.rivalLevel}`, C.arenaW / 2, 326, 14, COLORS.quiet, 'center', 400);
+    const best = s.save.bestLevel ? `Best: Level ${s.save.bestLevel}` : '';
+    const from = s.save.checkpoint > 1 ? `   ·   Starting at checkpoint Level ${s.save.checkpoint}` : '';
+    if (best || from) text(ctx, best + from, C.arenaW / 2, 326, 14, COLORS.quiet, 'center', 400);
     text(ctx, input.touch ? 'Tap to start' : 'Click to start', C.arenaW / 2, 372, 22, COLORS.read);
     text(ctx, s.ui.challenge, C.arenaW / 2, 412, 15, COLORS.text, 'center', 400);
     text(ctx, input.touch ? 'Left thumb move · right thumb drag to aim, release to shoot · quick swipe to dash'
@@ -437,10 +462,10 @@ function render(ctx, s, input) {
   drawHud(ctx, s);
   drawSticks(ctx, input);
   if (s.phase === 'roundEnd') {
-    const msg = s.roundWinner === 'player' ? 'ROUND WON' : s.roundWinner === 'rival' ? 'ROUND LOST' : 'DRAW';
+    const msg = s.roundWinner === 'player' ? `LEVEL ${s.round} CLEAR` : s.roundWinner === 'rival' ? 'DEFEATED' : 'DRAW: TRY AGAIN';
     text(ctx, msg, C.arenaW / 2, C.arenaH / 2, 48, COLORS.text, 'center', 800);
   }
-  if (s.phase === 'report' || s.phase === 'matchEnd') {
+  if (s.phase === 'report' || s.phase === 'runOver') {
     ctx.fillStyle = 'rgba(13,15,20,0.92)'; ctx.fillRect(0, 0, C.arenaW, C.arenaH);
     const tap = input.touch ? 'Tap' : 'Click';
     if (s.phase === 'report') {
@@ -450,17 +475,17 @@ function render(ctx, s, input) {
       rep.habits.forEach((h, i) => text(ctx, h, C.arenaW / 2, 210 + i * 36, 20, COLORS.read, 'center', 600));
       if (!rep.habits.length) text(ctx, 'Not enough data yet', C.arenaW / 2, 210, 20, COLORS.quiet, 'center', 400);
       text(ctx, rep.predictability, C.arenaW / 2, 340, 26, COLORS.rival, 'center', 800);
-      text(ctx, `${rep.readsLine}   ·   Score ${s.score.player} - ${s.score.rival}`, C.arenaW / 2, 380, 16, COLORS.quiet, 'center', 400);
+      text(ctx, `${rep.readsLine}   ·   Level ${s.round}`, C.arenaW / 2, 380, 16, COLORS.quiet, 'center', 400);
       if (rep.challengeJustDone) text(ctx, 'Daily challenge complete!', C.arenaW / 2, 412, 16, COLORS.player, 'center', 700);
-      text(ctx, `${tap} to continue`, C.arenaW / 2, 470, 18, COLORS.text);
+      const next = s.roundWinner === 'player' ? `Next: Level ${s.round + 1}` : s.roundWinner === 'draw' ? `Replay Level ${s.round}` : 'Run over';
+      text(ctx, `${tap} to continue   ·   ${next}`, C.arenaW / 2, 470, 18, COLORS.text);
     } else {
-      const won = s.score.player > s.score.rival;
-      text(ctx, won ? 'MATCH WON' : s.score.player === s.score.rival ? 'MATCH DRAWN' : 'MATCH LOST', C.arenaW / 2, 150, 44, COLORS.text, 'center', 800);
-      text(ctx, `${s.score.player} - ${s.score.rival}`, C.arenaW / 2, 200, 22, COLORS.quiet, 'center', 600);
+      text(ctx, 'RUN OVER', C.arenaW / 2, 140, 44, COLORS.text, 'center', 800);
+      text(ctx, `You reached Level ${s.ui.runLevel}   ·   Best Level ${s.save.bestLevel}`, C.arenaW / 2, 192, 20, COLORS.quiet, 'center', 600);
       text(ctx, s.ui.matchLine ?? '', C.arenaW / 2, 270, 20, COLORS.rival, 'center', 600);
-      text(ctx, `Rival level ${s.save.rivalLevel}   ·   Reads beaten ${s.stats.readsBeaten}/${s.stats.reads}`, C.arenaW / 2, 320, 16, COLORS.quiet, 'center', 400);
+      text(ctx, `Reads beaten this run: ${s.stats.readsBeaten}/${s.stats.reads}`, C.arenaW / 2, 320, 16, COLORS.quiet, 'center', 400);
       text(ctx, "I'll study this tonight. Come back tomorrow.", C.arenaW / 2, 352, 16, COLORS.quiet, 'center', 400);
-      text(ctx, `${tap} to play again`, C.arenaW / 2, 440, 18, COLORS.read);
+      text(ctx, `${tap} to try again from Level ${s.save.checkpoint}`, C.arenaW / 2, 440, 18, COLORS.read);
     }
   }
 }
