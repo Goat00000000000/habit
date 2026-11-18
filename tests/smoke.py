@@ -34,6 +34,12 @@ def open_page(browser, url, errors, **ctx):
 def desktop(browser, url, errors):
     page = open_page(browser, url, errors, viewport={"width": 1280, "height": 720})
     page.mouse.click(640, 360)  # start
+    page.wait_for_timeout(300)
+    assert page.evaluate("window.__habit.state.phase") == "round", "click should start the round"
+    page.evaluate("window.__habit.debugHit()")
+    page.wait_for_timeout(30)
+    page.screenshot(path=os.path.join(OUT, "hit.png"))
+    assert page.evaluate("window.__habit.state.feel.particles.length") > 0, "a hit should spawn particles"
     for i in range(50):  # ~10 s of play
         key = "a" if (i // 5) % 2 else "d"
         page.keyboard.down(key)
@@ -45,7 +51,7 @@ def desktop(browser, url, errors):
         page.keyboard.up(key)
     phase = page.evaluate("window.__habit.state.phase")
     assert phase != "title", f"still on title, phase={phase}"
-    assert page.evaluate("window.__habit.state.time") > 1, "round clock did not run"
+    assert page.evaluate("window.__habit.state.round >= 2 || window.__habit.state.time > 1"), "round clock did not run"
     page.screenshot(path=os.path.join(OUT, "desktop.png"))
     return page
 

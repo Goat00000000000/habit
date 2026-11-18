@@ -4,6 +4,7 @@ import { record, decay } from './habit.js';
 import { loadSave, writeSave } from './save.js';
 import { createBrain, think } from './rival.js';
 import { clampDt, distBand, dir8 } from './util.js';
+import { createFeel, hitStop, slowMo, shake, flash, burst, ghost, updateFeel, cameraOffset, drawFeel } from './feel.js';
 
 const COLORS = { bg: '#0d0f14', wall: '#2a3040', player: '#4fd1ff', rival: '#ff6b4a', text: '#e8ecf4', quiet: '#8a93a6', read: '#ffd84a' };
 
@@ -51,6 +52,7 @@ function newState() {
     player: fighter(240, C.arenaH / 2), rival: fighter(C.arenaW - 240, C.arenaH / 2),
     bullets: [], save, model: save.model, brain: null,
     sampleT: 0, lastAction: null, lastRivalShot: -9, readLabel: null, roundWinner: null, paused: false,
+    feel: createFeel(),
   };
 }
 
@@ -113,7 +115,7 @@ function updatePlayer(s, input, dt) {
   } else { p.aimX = input.mouse.x; p.aimY = input.mouse.y; }
   const dash = input.dashDir ?? mv;
   input.dashDir = null;
-  if (input.dashPressed && startDash(p, dash.x, dash.y)) logAction(s, `dash:${dir8(dash.x, dash.y)}`);
+  if (input.dashPressed && startDash(p, dash.x, dash.y)) { logAction(s, `dash:${dir8(dash.x, dash.y)}`); shake(s.feel, 3); }
   const wantFire = input.mouseDown || input.fireOnce;
   input.fireOnce = false;
   if (wantFire && p.fireCd <= 0) {
@@ -122,6 +124,7 @@ function updatePlayer(s, input, dt) {
     logAction(s, 'shoot');
   }
   moveFighter(p, mv.x, mv.y, dt);
+  if (p.dashT > 0) ghost(s.feel, p.x, p.y, COLORS.player, C.radius);
   s.sampleT += dt;
   if (s.sampleT >= C.sampleEvery) {
     s.sampleT -= C.sampleEvery;
@@ -138,7 +141,7 @@ function updateRival(s, dt) {
   };
   const it = think(s.brain, view, s.model, dt);
   if (it.read) s.readLabel = { text: it.read.label, t: 0, kind: it.read.kind };
-  if (it.dash) startDash(r, it.dash.x, it.dash.y);
+  if (it.dash && startDash(r, it.dash.x, it.dash.y)) shake(s.feel, 2);
   if (it.readShot) { fire(s, r, it.readShot.x, it.readShot.y, 'rival'); s.lastRivalShot = s.time; }
   if (it.fire && (r.fireCd <= 0 || it.readShot)) {
     fire(s, r, it.aimX, it.aimY, 'rival');
@@ -147,16 +150,28 @@ function updateRival(s, dt) {
   }
   r.aimX = it.aimX; r.aimY = it.aimY;
   moveFighter(r, it.moveX, it.moveY, dt);
+  if (r.dashT > 0) ghost(s.feel, r.x, r.y, COLORS.rival, C.radius);
+}
+
+function hit(s, target, color) {
+  target.hp -= 1; target.hitFlash = 0.12;
+  hitStop(s.feel, 0.06); flash(s.feel, 0.08); shake(s.feel, 6);
+  burst(s.feel, target.x, target.y, color, 12);
+  if (target.hp <= 0) slowMo(s.feel, 0.6, 0.25);
 }
 
 function updateBullets(s, dt) {
   const keep = [];
   for (const b of s.bullets) {
     b.x += b.vx * dt; b.y += b.vy * dt;
-    if (b.x < 0 || b.y < 0 || b.x > C.arenaW || b.y > C.arenaH) continue;
+    const color = b.owner === 'player' ? COLORS.player : COLORS.rival;
+    if (b.x < 0 || b.y < 0 || b.x > C.arenaW || b.y > C.arenaH) {
+      burst(s.feel, Math.max(0, Math.min(C.arenaW, b.x)), Math.max(0, Math.min(C.arenaH, b.y)), color, 6, 140);
+      continue;
+    }
     const target = b.owner === 'player' ? s.rival : s.player;
     if (target.dashT <= 0 && Math.hypot(b.x - target.x, b.y - target.y) < C.radius + C.bulletRadius) {
-      target.hp -= 1; target.hitFlash = 0.12;
+      hit(s, target, color);
       continue;
     }
     keep.push(b);
@@ -269,12 +284,17 @@ function render(ctx, s, input) {
       : 'WASD move · mouse aim · click shoot · Space dash', C.arenaW / 2, 470, 15, COLORS.quiet, 'center', 400);
     return;
   }
+  const cam = cameraOffset(s.feel);
+  ctx.save();
+  ctx.translate(cam.x, cam.y);
   for (const b of s.bullets) {
     ctx.fillStyle = b.owner === 'player' ? COLORS.player : COLORS.rival;
     ctx.beginPath(); ctx.arc(b.x, b.y, C.bulletRadius, 0, Math.PI * 2); ctx.fill();
   }
   drawFighter(ctx, s.player, COLORS.player);
   drawFighter(ctx, s.rival, COLORS.rival);
+  drawFeel(s.feel, ctx, C.arenaW, C.arenaH);
+  ctx.restore();
   drawRead(ctx, s);
   drawHud(ctx, s);
   drawSticks(ctx, input);
@@ -363,12 +383,12 @@ export function start(canvas) {
   canvas.addEventListener('touchend', touchEnd, { passive: false });
   canvas.addEventListener('touchcancel', touchEnd, { passive: false });
 
-  window.__habit = { state: s, toArena };
+  window.__habit = { state: s, toArena, debugHit: () => hit(s, s.rival, COLORS.player) };
   let last = performance.now();
   function frame(now) {
     const dt = clampDt((now - last) / 1000);
     last = now;
-    step(s, input, dt);
+    step(s, input, updateFeel(s.feel, dt));
     ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
     render(ctx, s, input);
     requestAnimationFrame(frame);
