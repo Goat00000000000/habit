@@ -4,7 +4,7 @@ import { record, recordMomentum, decay, topHabits, predictability } from './habi
 import { loadSave, writeSave, welcomeLine } from './save.js';
 import { createBrain, think, readInterval } from './rival.js';
 import { clampDt, distBand, dir8 } from './util.js';
-import { PILLARS, pushOut, inPillar, segmentBlocked, nearCover } from './arena.js';
+import { PILLARS, pushOut, inPillar, pillarAt, segmentBlocked, nearCover } from './arena.js';
 import { createFeel, hitStop, slowMo, shake, flash, burst, ghost, updateFeel } from './feel.js';
 import { render, INK } from './ink.js';
 import { createSound } from './sound.js';
@@ -16,7 +16,7 @@ const COLORS = { player: INK.ink, rival: INK.red };
 export function createInput() {
   return {
     keys: new Set(), mouse: { x: C.arenaW / 2, y: C.arenaH / 2 }, mouseDown: false, dashPressed: false, clicked: false,
-    touch: false, stick: null, aimTouch: null, dashDir: null, fireOnce: false, releaseAim: null,
+    touch: false, stick: null, aimTouch: null, dashDir: null, fireOnce: false, releaseAim: null, pick: null,
   };
 }
 
@@ -58,6 +58,7 @@ export function newState() {
     bullets: [], save, model: save.model, brain: null,
     sampleT: 0, lastAction: null, lastRivalShot: -9, readLabel: null, roundWinner: null, paused: false,
     feel: createFeel(),
+    tricks: [], trickOffer: [], overclockT: 0,
     roundStats: { dashedLeft: false, farShot: false },
     stats: { reads: 0, readsBeaten: 0, guesses: 0, guessesBeaten: 0 }, activeRead: null, outplayed: null, readSeq: 0,
     ui: { welcome: welcomeLine(save), challenge: challengeLine(save), report: null, matchLine: null },
@@ -66,6 +67,31 @@ export function newState() {
 
 function challengeLine(save) {
   return `Today: ${save.challenge.text}${save.challengeDone ? '  (done)' : ''}`;
+}
+
+// ---------- full screen ----------
+// Phones: ask for full screen and landscape on the first tap (Android allows it; iPhone needs Add to Home Screen).
+function goFullscreen() {
+  if (typeof document === 'undefined' || document.fullscreenElement || document.webkitFullscreenElement) return;
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!req) return;
+  try {
+    Promise.resolve(req.call(el, { navigationUI: 'hide' }))
+      .then(() => screen.orientation?.lock?.('landscape')?.catch?.(() => {}))
+      .catch(() => {});
+  } catch { /* not allowed here: keep playing in the window */ }
+}
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen?.().catch?.(() => {});
+  else goFullscreen();
+}
+
+function isIphoneBrowser() {
+  const ios = /iPhone|iPod/.test(navigator.userAgent);
+  const installed = navigator.standalone || window.matchMedia?.('(display-mode: standalone)').matches || window.matchMedia?.('(display-mode: fullscreen)').matches;
+  return ios && !installed;
 }
 
 // ---------- sound ----------
@@ -84,7 +110,7 @@ function startRound(s, input) {
     input.aimTouch = null; input.stick = null; input.releaseAim = null; input.mouseDown = false;
   }
   s.killTimer = null;
-  s.activeRead = null; s.outplayed = null; s.lastMoveDir = null;
+  s.activeRead = null; s.outplayed = null; s.lastMoveDir = null; s.overclockT = 0;
   s.round += 1;
   if (s.round > s.save.bestLevel) s.save.bestLevel = s.round;
   if (s.round % C.checkpointEvery === 0) s.save.checkpoint = Math.max(s.save.checkpoint, s.round);
@@ -126,10 +152,19 @@ function tuningFor(level) {
 }
 
 // A run starts at level 1, or at the highest checkpoint reached.
+// Tricks: pick one after clearing level 2, and get what is left at each checkpoint.
+export const TRICKS = ['overclock', 'ricochet'];
+function trickOffer(s) {
+  const left = TRICKS.filter(t => !s.tricks.includes(t));
+  if (s.round === 2 || s.round % C.checkpointEvery === 0) return left;
+  return [];
+}
+
 function startRun(s, input) {
   if (s.round === 0) s.round = Math.max(0, s.save.checkpoint - 1);
   s.stats = { reads: 0, readsBeaten: 0, guesses: 0, guessesBeaten: 0 };
   s.runBest = 0;
+  s.tricks = [];
   sfx.play('start');
   startRound(s, input);
 }
@@ -189,7 +224,7 @@ function updatePlayer(s, input, dt) {
   input.fireOnce = false;
   if (wantFire && p.fireCd <= 0) {
     fire(s, p, p.aimX, p.aimY, 'player');
-    p.fireCd = C.fireCooldown;
+    p.fireCd = s.overclockT > 0 ? C.fireCooldown / 2 : C.fireCooldown;
     sfx.play('shoot');
     if (playerCtx(s).dist === 'far') s.roundStats.farShot = true;
     logAction(s, 'shoot');
@@ -257,7 +292,10 @@ function resolveRead(s) {
   if (flying && s.time - r.firedAt < 2) return;
   s.activeRead = null;
   if (r.guess) { s.stats.guessesBeaten += 1; s.outplayed = { t: 0, text: 'UNREADABLE' }; }
-  else { s.stats.readsBeaten += 1; s.outplayed = { t: 0, text: 'OUTPLAYED' }; }
+  else {
+    s.stats.readsBeaten += 1; s.outplayed = { t: 0, text: 'OUTPLAYED' };
+    if (s.tricks.includes('overclock')) s.overclockT = C.overclockTime;
+  }
   s.brain.sinceRead = -2; // the rival needs a moment after being outplayed
   slowMo(s.feel, 0.3, 0.35);
   shake(s.feel, 4);
@@ -273,8 +311,28 @@ function updateBullets(s, dt) {
   for (const b of s.bullets) {
     b.x += b.vx * dt; b.y += b.vy * dt;
     const color = b.owner === 'player' ? COLORS.player : COLORS.rival;
-    if (inPillar(b.x, b.y)) { burst(s.feel, b.x, b.y, color, 6, 140); continue; }
-    if (b.x < 0 || b.y < 0 || b.x > C.arenaW || b.y > C.arenaH) {
+    const canBounce = b.owner === 'player' && !b.bounced && s.tricks.includes('ricochet');
+    const pillar = pillarAt(b.x, b.y);
+    if (pillar && canBounce) {
+      // Ricochet: step back out and flip the axis whose face was crossed.
+      const px = b.x - b.vx * dt, py = b.y - b.vy * dt;
+      if (px <= pillar.x || px >= pillar.x + pillar.w) b.vx = -b.vx; else b.vy = -b.vy;
+      b.x = px; b.y = py; b.bounced = true;
+      burst(s.feel, b.x, b.y, color, 4, 100);
+      keep.push(b);
+      continue;
+    }
+    if (pillar) { burst(s.feel, b.x, b.y, color, 6, 140); continue; }
+    const outX = b.x < 0 || b.x > C.arenaW, outY = b.y < 0 || b.y > C.arenaH;
+    if ((outX || outY) && canBounce) {
+      if (outX) { b.vx = -b.vx; b.x = b.x < 0 ? -b.x : 2 * C.arenaW - b.x; }
+      if (outY) { b.vy = -b.vy; b.y = b.y < 0 ? -b.y : 2 * C.arenaH - b.y; }
+      b.bounced = true;
+      burst(s.feel, b.x, b.y, color, 4, 100);
+      keep.push(b);
+      continue;
+    }
+    if (outX || outY) {
       burst(s.feel, Math.max(0, Math.min(C.arenaW, b.x)), Math.max(0, Math.min(C.arenaH, b.y)), color, 6, 140);
       continue;
     }
@@ -329,6 +387,7 @@ export function step(s, input, dt) {
     updateBullets(s, dt);
     resolveRead(s);
     if (s.outplayed && (s.outplayed.t += dt) > 1.2) s.outplayed = null;
+    s.overclockT = Math.max(0, s.overclockT - dt);
     if (s.player.hp <= 0 || s.rival.hp <= 0) {
       // Let the killing blow play out in slow motion before the round ends.
       s.killTimer ??= 0.15;
@@ -348,8 +407,21 @@ export function step(s, input, dt) {
         s.phase = 'runOver'; s.phaseT = 0;
       } else {
         if (s.roundWinner === 'draw') s.round -= 1; // replay the same level
-        startRound(s, input);
+        const offer = s.roundWinner === 'player' ? trickOffer(s) : [];
+        if (offer.length) { s.trickOffer = offer; s.phase = 'trickPick'; s.phaseT = 0; input.pick = null; }
+        else startRound(s, input);
       }
+    }
+  } else if (s.phase === 'trickPick') {
+    // Click or tap the left or right half, or press 1 or 2.
+    let pick = input.pick;
+    if (pick === null && click && s.phaseT > 0.3) pick = input.mouse.x < C.arenaW / 2 ? 0 : 1;
+    input.pick = null;
+    if (pick !== null && pick !== undefined) {
+      s.tricks.push(s.trickOffer.at(Math.min(pick, s.trickOffer.length - 1)));
+      s.trickOffer = [];
+      sfx.play('unreadable');
+      startRound(s, input);
     }
   } else if (s.phase === 'runOver') {
     if (click && s.phaseT > 0.5) { s.round = 0; startRun(s, input); }
@@ -396,7 +468,12 @@ export function start(canvas) {
   canvas.addEventListener('mousemove', e => { input.mouse = toArena(e.clientX, e.clientY); });
   window.addEventListener('pointerdown', () => sfx.unlock());
   window.addEventListener('keydown', () => sfx.unlock());
-  window.addEventListener('keydown', e => { if (e.code === 'KeyM') toggleMute(); });
+  window.addEventListener('keydown', e => {
+    if (e.code === 'KeyM') toggleMute();
+    if (e.code === 'KeyF') toggleFullscreen();
+    if (e.code === 'Digit1') input.pick = 0;
+    if (e.code === 'Digit2') input.pick = 1;
+  });
   canvas.addEventListener('mousedown', e => { input.mouse = toArena(e.clientX, e.clientY); input.mouseDown = true; input.clicked = true; });
   window.addEventListener('mouseup', () => { input.mouseDown = false; });
   canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -405,7 +482,13 @@ export function start(canvas) {
   canvas.addEventListener('touchstart', e => {
     e.preventDefault();
     input.touch = true;
-    if (s.phase !== 'round') { input.clicked = true; return; }
+    goFullscreen();
+    if (s.phase !== 'round') {
+      const t0 = e.changedTouches[0];
+      if (t0) input.mouse = toArena(t0.clientX, t0.clientY);
+      input.clicked = true;
+      return;
+    }
     for (const t of e.changedTouches) {
       const a = toArena(t.clientX, t.clientY);
       if (a.x < C.arenaW / 2 && !input.stick) input.stick = { id: t.identifier, ox: a.x, oy: a.y, x: a.x, y: a.y };
@@ -437,6 +520,9 @@ export function start(canvas) {
   canvas.addEventListener('touchcancel', touchEnd, { passive: false });
 
   s.ui.soundOn = () => !sfx.isMuted();
+  if (rotate) rotate.addEventListener('pointerdown', goFullscreen);
+  document.addEventListener('fullscreenchange', fit);
+  s.ui.iphoneHint = isIphoneBrowser();
   window.__habit = { state: s, input, toArena, debugHit: () => hit(s, s.rival, COLORS.player), debugEndRound: () => endRound(s) };
   let last = performance.now();
   function frame(now) {

@@ -22,8 +22,18 @@ def serve():
     return httpd, f"http://127.0.0.1:{httpd.server_address[1]}/index.html"
 
 
+# Records full screen and orientation-lock requests instead of performing them (headless Chrome cannot).
+FS_SPY = """
+window.__fs = { requested: 0, lock: null };
+Element.prototype.requestFullscreen = function () { window.__fs.requested++; return Promise.resolve(); };
+if (screen.orientation) screen.orientation.lock = o => { window.__fs.lock = o; return Promise.resolve(); };
+"""
+
+
 def open_page(browser, url, errors, **ctx):
-    page = browser.new_context(**ctx).new_page()
+    context = browser.new_context(**ctx)
+    context.add_init_script(FS_SPY)
+    page = context.new_page()
     page.on("console", lambda m: m.type == "error" and errors.append(m.text))
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(url)
@@ -34,6 +44,8 @@ def open_page(browser, url, errors, **ctx):
 def desktop(browser, url, errors):
     page = open_page(browser, url, errors, viewport={"width": 1280, "height": 720})
     page.mouse.click(640, 360)  # start
+    page.wait_for_timeout(50)
+    assert page.evaluate("window.__fs.requested") == 0, "desktop should not force full screen"
     page.wait_for_timeout(300)
     assert page.evaluate("window.__habit.state.phase") == "round", "click should start the round"
     page.evaluate("window.__habit.debugHit()")
@@ -88,6 +100,10 @@ def mobile_landscape(browser, url, errors):
     page.touchscreen.tap(422, 195)  # start
     page.wait_for_timeout(300)
     assert page.evaluate("window.__habit.state.phase") == "round", "tap should start the round"
+    fs = page.evaluate("window.__fs")
+    assert fs["requested"] >= 1, "first tap on a phone should ask for full screen"
+    assert fs["lock"] == "landscape", f"full screen should lock landscape, got {fs['lock']}"
+    assert page.evaluate("!!document.querySelector('link[rel=manifest]') && document.querySelector('meta[name=apple-mobile-web-app-capable]')?.content === 'yes'"), "home screen app settings missing"
     # left stick: hold a touch and drag right via CDP so the move stick is exercised
     cdp = page.context.new_cdp_session(page)
     def touch(kind, pts):
@@ -210,6 +226,19 @@ def returning_player(browser, url, errors):
     page.mouse.click(640, 360)
     page.wait_for_function("window.__habit.state.phase === 'runOver'", timeout=2000)
     page.screenshot(path=os.path.join(OUT, "runover.png"))
+    # trick pick screen after clearing level 2
+    page.evaluate("(() => { const s = window.__habit.state; s.round = 1; s.phase = 'title'; })()")
+    page.mouse.click(640, 360)
+    page.wait_for_timeout(200)
+    page.evaluate("(() => { const s = window.__habit.state; s.rival.hp = 0; })()")
+    page.wait_for_function("window.__habit.state.phase === 'report'", timeout=4000)
+    page.mouse.click(640, 360)
+    page.wait_for_function("window.__habit.state.phase === 'trickPick'", timeout=2000)
+    page.wait_for_timeout(400)
+    page.screenshot(path=os.path.join(OUT, "trickpick.png"))
+    page.keyboard.press("2")
+    page.wait_for_function("window.__habit.state.phase === 'round'", timeout=2000)
+    assert page.evaluate("window.__habit.state.tricks.join()") == "ricochet", "pressing 2 should pick Ricochet"
 
 
 def main():

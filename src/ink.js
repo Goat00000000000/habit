@@ -231,6 +231,44 @@ function drawOutplayed(ctx, s) {
   ctx.restore();
 }
 
+// ---------- tricks ----------
+const TRICK_INFO = {
+  overclock: { seal: '速', name: 'Overclock', lines: ['Beat a read and you fire', 'twice as fast for 2 seconds.'] },
+  ricochet: { seal: '跳', name: 'Ricochet', lines: ['Your shots bounce once', 'off walls and pillars.'] },
+};
+
+function trickPickScreen(ctx, s, input) {
+  sheet(ctx);
+  const one = s.trickOffer.length === 1;
+  write(ctx, one ? 'A new trick' : 'Choose a trick', 84, 96, 42, { font: BRUSH });
+  write(ctx, one ? 'You reached a checkpoint. It is yours for the rest of the run.' : 'It lasts for the rest of this run.', 86, 134, 16, { color: INK.inkSoft });
+  s.trickOffer.forEach((id, i) => {
+    const t = TRICK_INFO[id];
+    const x = one ? 84 : 84 + i * 440;
+    roughRect(ctx, x, 176, 380, 236, INK.ink, 1.6, seeded(70 + i));
+    seal(ctx, x + 56, 236, 54, t.seal, { color: INK.ink, rot: -0.06 + i * 0.1 });
+    write(ctx, t.name, x + 104, 236, 34, { font: BRUSH });
+    write(ctx, t.lines[0], x + 32, 318, 18);
+    write(ctx, t.lines[1], x + 32, 346, 18);
+    if (!one) write(ctx, input.touch ? (i ? 'tap right' : 'tap left') : `press ${i + 1}`, x + 32, 388, 14, { color: INK.inkSoft });
+  });
+  cta(ctx, one ? `${input.touch ? 'Tap' : 'Click'} to take it` : `${input.touch ? 'Tap a side' : 'Click a side'} to choose`, 84, 470);
+}
+
+function drawTricks(ctx, s) {
+  s.tricks.forEach((id, i) => seal(ctx, 52 + i * 30, 112, 22, TRICK_INFO[id].seal, { color: INK.ink, rot: -0.05 }));
+}
+
+function drawOverclock(ctx, s, t) {
+  if (!(s.overclockT > 0)) return;
+  const p = s.player;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, s.overclockT);
+  ctx.strokeStyle = INK.ink; ctx.lineWidth = 2; ctx.setLineDash([10, 6]); ctx.lineDashOffset = -t * 60;
+  ctx.beginPath(); ctx.arc(p.x, p.y, C.radius + 9, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
 // ---------- HUD ----------
 function drawHud(ctx, s) {
   write(ctx, `Level ${s.round}`, 40, 46, 26, { font: BRUSH });
@@ -292,7 +330,11 @@ function titleScreen(ctx, s, input) {
   write(ctx, s.ui.challenge.replace(/^Today: /, "Today's challenge: "), 84, y + 76, 15, { color: INK.inkSoft });
   write(ctx, input.touch
     ? 'Left thumb moves. Right thumb drags to aim and lifts to shoot. Swipe right side to dash.'
-    : `WASD to move, mouse to aim, click to shoot, Space to dash. M turns sound ${s.ui.soundOn?.() === false ? 'on' : 'off'}.`, 84, 500, 14, { color: INK.inkSoft });
+    : `WASD to move, mouse to aim, click to shoot, Space to dash. M turns sound ${s.ui.soundOn?.() === false ? 'on' : 'off'}, F for full screen.`, 84, 500, 14, { color: INK.inkSoft });
+  if (s.ui.iphoneHint) {
+    write(ctx, 'For full screen on iPhone:', C.arenaW - 60, 58, 15, { color: INK.ink, align: 'right' });
+    write(ctx, 'tap Share, then Add to Home Screen.', C.arenaW - 60, 82, 15, { color: INK.ink, align: 'right' });
+  }
 }
 
 function reportScreen(ctx, s, input) {
@@ -343,6 +385,7 @@ export function render(ctx, s, input) {
   drawPillars(ctx);
   for (const b of s.bullets) drawBullet(ctx, b);
   drawReadTarget(ctx, s);
+  drawOverclock(ctx, s, t);
   drawPlayer(ctx, s.player, t);
   drawRival(ctx, s.rival, t);
   drawFeel(s.feel, ctx, C.arenaW, C.arenaH);
@@ -350,6 +393,7 @@ export function render(ctx, s, input) {
   drawRead(ctx, s);
   drawOutplayed(ctx, s);
   drawHud(ctx, s);
+  drawTricks(ctx, s);
   drawSticks(ctx, input);
   if (s.phase === 'roundEnd') {
     const won = s.roundWinner === 'player', lost = s.roundWinner === 'rival';
@@ -358,4 +402,5 @@ export function render(ctx, s, input) {
   }
   if (s.phase === 'report') reportScreen(ctx, s, input);
   if (s.phase === 'runOver') runOverScreen(ctx, s, input);
+  if (s.phase === 'trickPick') trickPickScreen(ctx, s, input);
 }

@@ -43,6 +43,10 @@ export function segmentBlocked(x1, y1, x2, y2) {
   });
 }
 
+export function pillarAt(x, y) {
+  return PILLARS.find(p => x > p.x && x < p.x + p.w && y > p.y && y < p.y + p.h) ?? null;
+}
+
 export function nearCover(x, y, range = 70) {
   return inPillar(x, y, range);
 }

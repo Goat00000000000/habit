@@ -13,6 +13,7 @@ export const CONFIG = Object.freeze({
   dashCooldown: 1.2,     // s
   roundTime: 45,         // s per level
   checkpointEvery: 5,    // levels
+  overclockTime: 2,      // s of double fire rate after an OUTPLAYED (Overclock trick)
   sampleEvery: 0.25,     // s between habit samples
   reactionTime: 0.25,    // s rival lag
   readThreshold: 0.55,   // dash: top action share needed to commit a read (2 sensible choices)

@@ -24,6 +24,7 @@ function finish(s, input, winner) {
   assert.equal(s.phase, 'report');
   input.clicked = true;
   step(s, input, DT);
+  if (s.phase === 'trickPick') { input.pick = 0; step(s, input, DT); } // take the offered trick
 }
 
 test('a fresh run starts at level 1', () => {

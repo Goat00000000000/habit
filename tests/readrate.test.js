@@ -18,6 +18,7 @@ test('a skilled-style player sees a READ or GUESS at least once every 4.5 s from
     let next = 0;
     while (s.phase !== 'runOver' && s.round < 12) {
       if (s.phase === 'report') { input.clicked = true; step(s, input, 1 / 60); continue; }
+      if (s.phase === 'trickPick') { input.pick = 0; step(s, input, 1 / 60); continue; }
       if (s.phase === 'round') {
         if (s.time >= next) { input.keys = new Set(KEYS[Math.floor(rand() * 8)]); next = s.time + 0.3 + rand() * 0.6; }
         const r = s.rival, d = Math.hypot(r.x - s.player.x, r.y - s.player.y);

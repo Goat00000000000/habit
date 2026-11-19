@@ -23,6 +23,7 @@ The rival watches what you do: where you dodge when shot at, which way you move,
 - **Habit Report** after every level: your top 3 habits with percentages and a predictability score.
 - **Day 1 hook:** the rival remembers you between sessions ("Welcome back. Last time: Dodges left when shot at (80%)"), studies overnight, and there is a daily challenge.
 - **Three pillars** for cover. Peeking from cover becomes a habit the rival can read too.
+- **Tricks:** pick one after level 2 and get the other at the level 5 checkpoint. Overclock: beat a read and you fire twice as fast for 2 seconds. Ricochet: your shots bounce once off walls and pillars.
 
 ## Design decisions
 

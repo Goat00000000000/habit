@@ -37,6 +37,7 @@ export function skilledRun(rand, maxLevel = 25) {
   while (s.round <= maxLevel) {
     if (s.phase === 'runOver') return s.ui.runLevel;
     if (s.phase === 'report') { input.clicked = true; step(s, input, 1 / 60); continue; }
+    if (s.phase === 'trickPick') { input.pick = 0; step(s, input, 1 / 60); continue; }
     if (s.phase === 'round') {
       if (s.time >= next) { input.keys = new Set(KEYS[Math.floor(rand() * KEYS.length)]); next = s.time + 0.3 + rand() * 0.6; }
       const r = s.rival, d = Math.hypot(r.x - s.player.x, r.y - s.player.y), travel = d / CONFIG.bulletSpeed;
