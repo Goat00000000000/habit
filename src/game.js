@@ -384,6 +384,7 @@ function resolveRead(s) {
   s.rival.x = Math.max(C.radius, Math.min(C.arenaW - C.radius, s.rival.x + dx / l * 18));
   s.rival.y = Math.max(C.radius, Math.min(C.arenaH - C.radius, s.rival.y + dy / l * 18));
   sfx.play(r.guess ? 'unreadable' : 'outplayed');
+  if (!r.guess) sfx.play('slowmo');
 }
 
 function updateBullets(s, dt) {

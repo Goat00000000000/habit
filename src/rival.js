@@ -11,10 +11,11 @@ const DIRS = {
 };
 const WORDS = { N: 'UP', S: 'DOWN', E: 'RIGHT', W: 'LEFT', NE: 'UP-RIGHT', NW: 'UP-LEFT', SE: 'DOWN-RIGHT', SW: 'DOWN-LEFT' };
 
-// Seconds between reads at each level: none at 1, 2.8 s at 2 down to 2.2 s at 5, then faster to a 1.2 s floor.
+// Seconds between reads at each level: none at 1, 3.2 s at 2 (where reads are new) down to 2.2 s at 5,
+// then faster to a 1.2 s floor.
 export function readInterval(level) {
   if (level <= 1) return Infinity;
-  if (level <= 5) return 2.8 - (level - 2) * 0.2;
+  if (level <= 5) return 3.2 - (level - 2) * (1 / 3);
   return Math.max(1.2, 2.2 - 0.15 * (level - 5));
 }
 

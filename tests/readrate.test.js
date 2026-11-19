@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import { newState, createInput, step, settings } from '../src/game.js';
 
 settings.tutorial = false; // these tests measure the game itself, not the first-run lesson
+import { seedRandom } from './seed.js';
+seedRandom(20261120);
 import { CONFIG } from '../src/config.js';
 
 // Measured average is about 4 s. The rival's randomness and the pillar layouts (which can block its line of sight)

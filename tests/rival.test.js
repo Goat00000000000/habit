@@ -31,11 +31,11 @@ function run(model, round, seconds, dt = 0.05) {
   return { reads, punishes };
 }
 
-test('read interval: none at level 1, 2.8 s at level 2, 2.2 s at level 5, never under 1.2 s', () => {
+test('read interval: none at level 1, 3.2 s at level 2, 2.2 s at level 5, never under 1.2 s', () => {
   assert.equal(readInterval(1), Infinity);
-  assert.equal(readInterval(2), 2.8);
+  assert.equal(readInterval(2), 3.2);
   assert.ok(Math.abs(readInterval(5) - 2.2) < 1e-9);
-  assert.ok(readInterval(3) < 2.8 && readInterval(3) > 2.2);
+  assert.ok(readInterval(3) < 3.2 && readInterval(3) > 2.2);
   assert.equal(readInterval(50), 1.2);
 });
 

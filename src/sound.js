@@ -1,7 +1,7 @@
 // Samurai sound set, synthesised with the Web Audio API (no audio files to load).
 // Wooden clacks (hyoshigi), taiko hits, blade swishes, a sword clang and koto plucks.
 
-export const SOUNDS = ['start', 'shoot', 'rivalShoot', 'dash', 'rivalHit', 'playerHit', 'read', 'guess', 'outplayed', 'unreadable', 'clear', 'defeat'];
+export const SOUNDS = ['start', 'shoot', 'rivalShoot', 'dash', 'rivalHit', 'playerHit', 'read', 'guess', 'outplayed', 'unreadable', 'clear', 'defeat', 'slowmo'];
 
 // Miyako-bushi scale on D, the classic koto sound: D Eb G A Bb D.
 const KOTO = [293.66, 311.13, 392.0, 440.0, 466.16, 587.33];
@@ -97,6 +97,12 @@ export function createSound(makeContext) {
     guess: () => clack(0, 0.35),
     outplayed: () => { pluck(KOTO[2]); pluck(KOTO[3], 0.09); pluck(KOTO[5], 0.18, 0.26); },
     unreadable: () => { pluck(KOTO[1]); pluck(KOTO[4], 0.1); },
+    // slow motion: time bending down, a deep tone and a breath of wind sliding lower together
+    slowmo: () => {
+      tone(220, 0.75, { freqEnd: 70, gain: 0.32, attack: 0.02 });
+      tone(330, 0.6, { type: 'triangle', freqEnd: 105, gain: 0.08, attack: 0.02 });
+      noise(0.8, { type: 'lowpass', f0: 2400, f1: 160, q: 0.7, gain: 0.3, attack: 0.05 });
+    },
     clear: () => { taiko(80); taiko(80, 0.18); pluck(KOTO[0], 0.3); pluck(KOTO[2], 0.42); pluck(KOTO[5], 0.54, 0.26); },
     defeat: () => { taiko(48, 0, 0.8); pluck(KOTO[4], 0.25); pluck(KOTO[1], 0.45); pluck(KOTO[0] / 2, 0.7, 0.26); },
   };
