@@ -2,7 +2,9 @@
 // Design target: a skilled player clears the early levels easily but a run ends somewhere around levels 5-12.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newState, createInput, step } from '../src/game.js';
+import { newState, createInput, step, settings } from '../src/game.js';
+
+settings.tutorial = false; // these tests measure the game itself, not the first-run lesson
 import { CONFIG } from '../src/config.js';
 
 function rng(seed) {

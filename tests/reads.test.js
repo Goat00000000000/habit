@@ -1,7 +1,9 @@
 // A player with obvious habits must get read early in round 2, even with no data from round 1.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newState, createInput, step } from '../src/game.js';
+import { newState, createInput, step, settings } from '../src/game.js';
+
+settings.tutorial = false; // these tests measure the game itself, not the first-run lesson
 
 test('a habitual player is read within 4 s of round 2', () => {
   let firstRead = null, tries = 0;

@@ -1,7 +1,9 @@
 // OUTPLAYED: when the rival commits a read and none of its read bullets hit within 0.6 s, the player beat the read.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newState, createInput, step } from '../src/game.js';
+import { newState, createInput, step, settings } from '../src/game.js';
+
+settings.tutorial = false; // these tests measure the game itself, not the first-run lesson
 import { record } from '../src/habit.js';
 
 // Round 3 with a strong "dodges left when shot at" habit, player standing still until the read shot fires.
@@ -81,4 +83,19 @@ test('beating a guess shows UNREADABLE and counts separately from reads', () => 
   } else {
     assert.equal(s.outplayed.text, 'OUTPLAYED');
   }
+});
+
+test('an OUTPLAYED slows the rival to half speed for 1.5 s', async () => {
+  const { CONFIG } = await import('../src/config.js');
+  const { s, input } = untilReadShot();
+  for (let i = 0; i < 60 && !s.outplayed; i++) {
+    s.bullets = s.bullets.filter(b => b.readId !== s.activeRead?.id);
+    step(s, input, 1 / 60);
+  }
+  assert.ok(s.rivalSlowT > 1.4, `slow timer ${s.rivalSlowT}`);
+  for (let i = 0; i < 10; i++) step(s, input, 1 / 60);
+  const speed = Math.hypot(s.rival.vx, s.rival.vy);
+  assert.ok(speed <= CONFIG.playerSpeed * 0.5 + 1, `rival speed ${speed}`);
+  for (let i = 0; i < 100; i++) step(s, input, 1 / 60);
+  assert.equal(s.rivalSlowT, 0);
 });

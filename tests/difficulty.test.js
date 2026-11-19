@@ -2,7 +2,9 @@
 // Design target: ~90% of new players win round 1, and it gets harder after that.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newState, createInput, step } from '../src/game.js';
+import { newState, createInput, step, settings } from '../src/game.js';
+
+settings.tutorial = false; // these tests measure the game itself, not the first-run lesson
 
 function rng(seed) {
   return () => {

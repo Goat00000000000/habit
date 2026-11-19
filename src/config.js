@@ -14,7 +14,10 @@ export const CONFIG = Object.freeze({
   roundTime: 45,         // s per level
   checkpoints: [2, 4, 5], // early checkpoints so new players keep progress...
   checkpointEvery: 3,    // ...then one every 3 levels after level 5 (8, 11, 14...)
-  overclockTime: 2,      // s of double fire rate after an OUTPLAYED (Overclock trick)
+  dashButton: { x: 870, y: 458, r: 42 }, // phone dash button, bottom right of the arena
+  skipButton: { x: 480, y: 506, w: 150, h: 36 }, // "skip lesson", bottom centre
+  overclockTime: 2,
+  outplayedSlow: { time: 1.5, speed: 0.5 }, // after an OUTPLAYED the rival moves at half speed for 1.5 s      // s of double fire rate after an OUTPLAYED (Overclock trick)
   sampleEvery: 0.25,     // s between habit samples
   reactionTime: 0.25,    // s rival lag
   readThreshold: 0.55,   // dash: top action share needed to commit a read (2 sensible choices)

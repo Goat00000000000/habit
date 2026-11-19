@@ -16,7 +16,7 @@ const COLORS = { player: INK.ink, rival: INK.red };
 export function createInput() {
   return {
     keys: new Set(), mouse: { x: C.arenaW / 2, y: C.arenaH / 2 }, mouseDown: false, dashPressed: false, clicked: false,
-    touch: false, stick: null, aimTouch: null, dashDir: null, fireOnce: false, releaseAim: null, pick: null,
+    touch: false, stick: null, aimTouch: null, dashDir: null, fireOnce: false, releaseAim: null, pick: null, skip: false,
   };
 }
 
@@ -110,7 +110,8 @@ function startRound(s, input) {
     input.aimTouch = null; input.stick = null; input.releaseAim = null; input.mouseDown = false;
   }
   s.killTimer = null;
-  s.activeRead = null; s.outplayed = null; s.lastMoveDir = null; s.overclockT = 0;
+  s.activeRead = null; s.outplayed = null; s.lastMoveDir = null; s.overclockT = 0; s.rivalSlowT = 0;
+  s.tutorial = settings.tutorial && s.round + 1 === 1 && !s.save.tutorialDone ? { step: 'move', t: 0, moved: 0 } : null;
   s.round += 1;
   if (s.round > s.save.bestLevel) s.save.bestLevel = s.round;
   if (isCheckpoint(s.round)) s.save.checkpoint = Math.max(s.save.checkpoint, s.round);
@@ -130,6 +131,7 @@ function playerCtx(s) {
 }
 
 function logAction(s, action) {
+  if (inLesson(s)) return; // the lesson tells you what to do, so it says nothing about your habits
   record(s.model, playerCtx(s), action);
   s.lastAction = action;
 }
@@ -152,6 +154,59 @@ function tuningFor(level) {
 }
 
 // A run starts at level 1, or at the highest checkpoint reached.
+// ---------- the lesson ----------
+// A first-ever run turns level 1 into a lesson: move, shoot, dash, beat one scripted READ, then the real fight.
+// The rival never shoots, nothing does damage and the clock is stopped until the fight starts.
+export const settings = { tutorial: true }; // tests that measure balance switch the lesson off
+
+function inLesson(s) {
+  return !!s.tutorial && s.tutorial.step !== 'fight';
+}
+
+function lessonNext(s, step) {
+  s.tutorial.step = step;
+  s.tutorial.t = 0;
+}
+
+function startFight(s) {
+  s.tutorial.step = 'fight';
+  s.tutorial.fightT = 0;
+  s.save.tutorialDone = true;
+  writeSave(safeStorage(), s.save);
+  s.time = 0; s.sampleT = 0; s.bullets = []; s.activeRead = null; s.readLabel = null;
+  s.player.hp = C.hp; s.rival.hp = s.rival.maxHp;
+  s.brain = createBrain(s.save.rivalLevel, s.save.bonusReads, s.tuning);
+  s.stats = { reads: 0, readsBeaten: 0, guesses: 0, guessesBeaten: 0 };
+}
+
+function updateLesson(s, input, dt) {
+  const L = s.tutorial;
+  if (input.skip) { input.skip = false; if (L.step !== 'fight') startFight(s); return; }
+  if (L.step === 'fight') { L.fightT += dt; return; }
+  L.t += dt;
+  if (L.step === 'read') {
+    // Stamp a scripted read, then fire at you and at where it says you will dash.
+    if (!L.stamped && L.t > 1) {
+      const at = { x: Math.max(C.radius, s.player.x - C.dashSpeed * C.dashTime), y: s.player.y };
+      s.readLabel = { text: 'READ: DASH LEFT', t: 0, kind: 'dodge', at };
+      L.stamped = true; L.at = at;
+      sfx.play('read');
+    }
+    if (L.stamped && !L.fired && L.t > 1.3) {
+      L.fired = true;
+      s.activeRead = { id: ++s.readSeq, firedAt: s.time, hit: false, guess: false, lesson: true };
+      // Lesson shots pass through pillars so the player always gets to dodge them.
+      for (const t of [s.player, L.at]) Object.assign(fire(s, s.rival, t.x, t.y, 'rival', 300), { readId: s.activeRead.id, ghost: true });
+      sfx.play('rivalShoot');
+    }
+    // Hit by it: no damage, and it tries again.
+    if (L.fired && !s.activeRead && !s.outplayed) { L.stamped = false; L.fired = false; L.t = 0; }
+    if (s.outplayed) lessonNext(s, 'beaten');
+  } else if (L.step === 'beaten' && L.t > 1.6) {
+    startFight(s);
+  }
+}
+
 // Checkpoints: levels 2, 4 and 5, then every 3 levels. Reaching one means your next run starts there.
 export function isCheckpoint(level) {
   const last = C.checkpoints.at(-1);
@@ -219,7 +274,9 @@ function updatePlayer(s, input, dt) {
   } else { p.aimX = input.mouse.x; p.aimY = input.mouse.y; }
   const dash = input.dashDir ?? mv;
   input.dashDir = null;
+  if (inLesson(s) && s.tutorial.step === 'move' && Math.hypot(mv.x, mv.y) > 0.1 && (s.tutorial.moved += dt) > 0.8) lessonNext(s, 'shoot');
   if (input.dashPressed && startDash(p, dash.x, dash.y)) {
+    if (inLesson(s) && s.tutorial.step === 'dash') lessonNext(s, 'read');
     const d = dir8(dash.x, dash.y) ?? (dash.x < 0 ? 'W' : 'E');
     if (d.includes('W')) s.roundStats.dashedLeft = true;
     logAction(s, `dash:${d}`);
@@ -258,6 +315,7 @@ function updateRival(s, dt) {
     blocked: segmentBlocked(r.x, r.y, p.x, p.y),
   };
   const it = think(s.brain, view, s.model, dt);
+  if (inLesson(s)) { it.fire = false; it.read = null; it.readShot = null; it.dash = null; }
   if (it.read) {
     s.readLabel = { text: it.read.label, t: 0, kind: it.read.kind, at: it.read.fireAt };
     if (it.read.kind === 'guess') s.stats.guesses += 1; else s.stats.reads += 1;
@@ -277,11 +335,20 @@ function updateRival(s, dt) {
     s.lastRivalShot = s.time;
   }
   r.aimX = it.aimX; r.aimY = it.aimY;
-  moveFighter(r, it.moveX, it.moveY, dt);
+  const slow = s.rivalSlowT > 0 ? C.outplayedSlow.speed : 1;
+  moveFighter(r, it.moveX * slow, it.moveY * slow, dt);
   if (r.dashT > 0) ghost(s.feel, r.x, r.y, COLORS.rival, C.radius);
 }
 
 function hit(s, target, color) {
+  if (inLesson(s)) {
+    // Lesson hits do no damage; your first hit on the rival finishes the "shoot" step.
+    target.hitFlash = 0.12;
+    sfx.play(target === s.rival ? 'rivalHit' : 'playerHit');
+    burst(s.feel, target.x, target.y, color, 12);
+    if (target === s.rival && s.tutorial.step === 'shoot') lessonNext(s, 'dash');
+    return;
+  }
   target.hp -= 1; target.hitFlash = 0.12;
   sfx.play(target === s.rival ? 'rivalHit' : 'playerHit');
   hitStop(s.feel, 0.06); flash(s.feel, 0.08); shake(s.feel, 6);
@@ -299,7 +366,9 @@ function resolveRead(s) {
   s.activeRead = null;
   if (r.guess) { s.stats.guessesBeaten += 1; s.outplayed = { t: 0, text: 'UNREADABLE' }; }
   else {
-    s.stats.readsBeaten += 1; s.outplayed = { t: 0, text: 'OUTPLAYED' };
+    if (!r.lesson) s.stats.readsBeaten += 1;
+    s.outplayed = { t: 0, text: 'OUTPLAYED' };
+    s.rivalSlowT = C.outplayedSlow.time; // it was wrong-footed: punish it
     if (s.tricks.includes('overclock')) s.overclockT = C.overclockTime;
   }
   s.brain.sinceRead = -2; // the rival needs a moment after being outplayed
@@ -318,7 +387,7 @@ function updateBullets(s, dt) {
     b.x += b.vx * dt; b.y += b.vy * dt;
     const color = b.owner === 'player' ? COLORS.player : COLORS.rival;
     const canBounce = b.owner === 'player' && !b.bounced && s.tricks.includes('ricochet');
-    const pillar = pillarAt(b.x, b.y);
+    const pillar = b.ghost ? null : pillarAt(b.x, b.y);
     if (pillar && canBounce) {
       // Ricochet: step back out and flip the axis whose face was crossed.
       const px = b.x - b.vx * dt, py = b.y - b.vy * dt;
@@ -386,7 +455,8 @@ export function step(s, input, dt) {
   if (s.paused) return;
   if (s.phase === 'title') { if (click) startRun(s, input); }
   else if (s.phase === 'round') {
-    s.time += dt;
+    if (s.tutorial) updateLesson(s, input, dt);
+    if (!inLesson(s)) s.time += dt;
     if (s.readLabel) s.readLabel.t += dt;
     updatePlayer(s, input, dt);
     updateRival(s, dt);
@@ -394,6 +464,7 @@ export function step(s, input, dt) {
     resolveRead(s);
     if (s.outplayed && (s.outplayed.t += dt) > 1.2) s.outplayed = null;
     s.overclockT = Math.max(0, s.overclockT - dt);
+    s.rivalSlowT = Math.max(0, (s.rivalSlowT ?? 0) - dt);
     if (s.player.hp <= 0 || s.rival.hp <= 0) {
       // Let the killing blow play out in slow motion before the round ends.
       s.killTimer ??= 0.15;
@@ -477,10 +548,17 @@ export function start(canvas) {
   window.addEventListener('keydown', e => {
     if (e.code === 'KeyM') toggleMute();
     if (e.code === 'KeyF') toggleFullscreen();
+    if (e.code === 'Enter' && inLesson(s)) input.skip = true;
     if (e.code === 'Digit1') input.pick = 0;
     if (e.code === 'Digit2') input.pick = 1;
   });
-  canvas.addEventListener('mousedown', e => { input.mouse = toArena(e.clientX, e.clientY); input.mouseDown = true; input.clicked = true; });
+  const onSkip = a => inLesson(s) && s.phase === 'round' && Math.abs(a.x - C.skipButton.x) < C.skipButton.w / 2 && Math.abs(a.y - C.skipButton.y) < C.skipButton.h / 2;
+  const onDash = a => s.phase === 'round' && Math.hypot(a.x - C.dashButton.x, a.y - C.dashButton.y) < C.dashButton.r + 10;
+  canvas.addEventListener('mousedown', e => {
+    input.mouse = toArena(e.clientX, e.clientY);
+    if (onSkip(input.mouse)) { input.skip = true; return; }
+    input.mouseDown = true; input.clicked = true;
+  });
   window.addEventListener('mouseup', () => { input.mouseDown = false; });
   canvas.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -497,6 +575,16 @@ export function start(canvas) {
     }
     for (const t of e.changedTouches) {
       const a = toArena(t.clientX, t.clientY);
+      if (onSkip(a)) { input.skip = true; continue; }
+      if (onDash(a)) {
+        // Dash button: dash the way the left thumb is pushing, or away from the rival when standing still.
+        const mv = moveVector(input);
+        const away = { x: s.player.x - s.rival.x, y: s.player.y - s.rival.y };
+        const d = Math.hypot(mv.x, mv.y) > 0.1 ? mv : away;
+        const l = Math.hypot(d.x, d.y) || 1;
+        input.dashPressed = true; input.dashDir = { x: d.x / l, y: d.y / l };
+        continue;
+      }
       if (a.x < C.arenaW / 2 && !input.stick) input.stick = { id: t.identifier, ox: a.x, oy: a.y, x: a.x, y: a.y };
       else if (!input.aimTouch) input.aimTouch = { id: t.identifier, sx: a.x, sy: a.y, x: a.x, y: a.y, t0: performance.now() };
     }

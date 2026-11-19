@@ -15,10 +15,11 @@ The rival watches what you do: where you dodge when shot at, which way you move,
 ## Controls
 
 - Desktop: WASD move, mouse aim, click shoot, Space dash, M to mute
-- Mobile (landscape): left thumb moves, right thumb drags to aim and releases to shoot, quick swipe on the right to dash
+- Mobile (landscape): left thumb moves, right thumb drags to aim and releases to shoot, dash button bottom right (or a quick swipe)
 
 ## What is in it
 
+- **A first-run lesson:** level 1 teaches move, shoot and dash, then stamps one scripted READ so you learn the core idea by beating it. Skippable.
 - **Levels:** an endless ladder. Win a level to go up, lose and the run ends. Checkpoints at levels 2, 4 and 5, then every 3 levels, so your next run starts from the last one you reached.
 - **Habit Report** after every level: your top 3 habits with percentages and a predictability score.
 - **Day 1 hook:** the rival remembers you between sessions ("Welcome back. Last time: Dodges left when shot at (80%)"), studies overnight, and there is a daily challenge.
@@ -31,7 +32,7 @@ The rival watches what you do: where you dodge when shot at, which way you move,
 - **Endless levels instead of best of 5.** In playtesting I won every match, because best of 5 ended before the hard rounds. A level ladder lets good players reach the real difficulty.
 - **Harder by reading, not by aiming.** Past level 5 the rival never aims better. It gets tougher (more HP, more dodges) and smarter: it reads more often and commits on less evidence. An aimbot feels unfair. A rival that knows you feels personal.
 - **Reads must actually happen.** In my own playtests the rival read me only twice in 7 levels, so reviewers would never see the core mechanic. I measured why (the rival only tried a read when its gun was ready, and was rarely confident against a player who mixes it up), then added momentum reads and honest GUESSes. A skilled-style player now sees a READ or GUESS about every 4 seconds, up from every 6.
-- **Fair reads.** Every read is telegraphed 0.3 s early with text and a target ring, and beating one is rewarded with OUTPLAYED.
+- **Fair reads.** Every read is telegraphed 0.3 s early with text and a target ring, and beating one is rewarded with OUTPLAYED and a rival slowed to half speed for 1.5 s.
 
 ## How I used AI
 

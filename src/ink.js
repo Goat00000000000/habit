@@ -288,6 +288,47 @@ function drawHud(ctx, s) {
   if (half > 2) brushLine(ctx, C.arenaW / 2 - half, 40, C.arenaW / 2 + half, 40, 4, left < 0.2 ? INK.red : INK.ink);
 }
 
+// ---------- lesson ----------
+const LESSON = {
+  move: { title: 'Move', key: 'Use W A S D to move.', touch: 'Drag your left thumb to move.' },
+  shoot: { title: 'Shoot it', key: 'Aim with the mouse and click to shoot.', touch: 'Drag your right thumb to aim, lift to shoot.' },
+  dash: { title: 'Dash', key: 'Press Space to dash. Nothing can hit you mid-dash.', touch: 'Tap the dash button. Nothing can hit you mid-dash.' },
+  read: { title: 'It reads you', key: 'A red seal means it predicted your move. Do the opposite.', touch: 'A red seal means it predicted your move. Do the opposite.' },
+  beaten: { title: 'That is the whole game', key: 'Beat its reads. Now beat it for real.', touch: 'Beat its reads. Now beat it for real.' },
+};
+const ORDER = ['move', 'shoot', 'dash', 'read', 'beaten'];
+
+function drawLesson(ctx, s, input) {
+  const L = s.tutorial;
+  if (!L) return;
+  if (L.step === 'fight') {
+    if (L.fightT < 2) write(ctx, 'Now beat it.', C.arenaW / 2, 120, 40, { align: 'center', font: BRUSH, alpha: Math.min(1, 2 - L.fightT) });
+    return;
+  }
+  const info = LESSON[L.step];
+  write(ctx, info.title, C.arenaW / 2, 104, 40, { align: 'center', font: BRUSH });
+  write(ctx, input.touch ? info.touch : info.key, C.arenaW / 2, 142, 18, { align: 'center', color: L.step === 'read' ? INK.red : INK.ink });
+  // progress: one ink dot per step
+  ORDER.forEach((step, i) => {
+    blob(ctx, C.arenaW / 2 - 40 + i * 20, 172, 4.5, 80 + i, 0);
+    if (i <= ORDER.indexOf(L.step)) { ctx.fillStyle = INK.ink; ctx.fill(); } else { ctx.strokeStyle = INK.inkSoft; ctx.lineWidth = 1.2; ctx.stroke(); }
+  });
+  const b = C.skipButton;
+  write(ctx, input.touch ? 'skip lesson' : 'skip lesson (Enter)', b.x, b.y, 15, { align: 'center', color: INK.inkSoft });
+}
+
+function drawDashButton(ctx, s, input) {
+  if (!input.touch) return;
+  const b = C.dashButton;
+  const ready = s.player.dashCd <= 0;
+  ctx.save();
+  ctx.globalAlpha = ready ? 0.85 : 0.35;
+  blob(ctx, b.x, b.y, b.r, 120, 0);
+  ctx.strokeStyle = INK.ink; ctx.lineWidth = 2.5; ctx.stroke();
+  write(ctx, 'dash', b.x, b.y + 1, 20, { align: 'center', font: BRUSH });
+  ctx.restore();
+}
+
 function drawSticks(ctx, input) {
   if (!input.touch || !input.stick) return;
   const st = input.stick;
@@ -388,6 +429,12 @@ export function render(ctx, s, input) {
   drawOverclock(ctx, s, t);
   drawPlayer(ctx, s.player, t);
   drawRival(ctx, s.rival, t);
+  if (s.rivalSlowT > 0) {
+    // slowed: ink drips under the rival
+    ctx.save(); ctx.fillStyle = INK.red; ctx.globalAlpha = Math.min(1, s.rivalSlowT);
+    for (let i = -1; i <= 1; i++) { blob(ctx, s.rival.x + i * 8, s.rival.y + C.radius + 6 + ((t * 30 + i * 7) % 10), 2.4, 140 + i, 0); ctx.fill(); }
+    ctx.restore();
+  }
   drawFeel(s.feel, ctx, C.arenaW, C.arenaH);
   ctx.restore();
   drawRead(ctx, s);
@@ -395,6 +442,7 @@ export function render(ctx, s, input) {
   drawHud(ctx, s);
   drawTricks(ctx, s);
   drawSticks(ctx, input);
+  if (s.phase === 'round') { drawLesson(ctx, s, input); drawDashButton(ctx, s, input); }
   if (s.phase === 'roundEnd') {
     const won = s.roundWinner === 'player', lost = s.roundWinner === 'rival';
     write(ctx, won ? `Level ${s.round} cleared` : lost ? 'Defeated' : 'A draw. Again.', C.arenaW / 2, C.arenaH / 2, 64,

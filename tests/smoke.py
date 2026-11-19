@@ -30,9 +30,14 @@ if (screen.orientation) screen.orientation.lock = o => { window.__fs.lock = o; r
 """
 
 
-def open_page(browser, url, errors, **ctx):
+SKIP_LESSON = "if (!localStorage.getItem('habit.save.v1')) localStorage.setItem('habit.save.v1', JSON.stringify({ tutorialDone: true }));"
+
+
+def open_page(browser, url, errors, lesson=False, **ctx):
     context = browser.new_context(**ctx)
     context.add_init_script(FS_SPY)
+    if not lesson:
+        context.add_init_script(SKIP_LESSON)
     page = context.new_page()
     page.on("console", lambda m: m.type == "error" and errors.append(m.text))
     page.on("pageerror", lambda e: errors.append(str(e)))
@@ -123,6 +128,13 @@ def mobile_landscape(browser, url, errors):
     page.wait_for_timeout(50)
     assert page.evaluate("window.__habit.state.player.dashCd") > 0, "swipe should dash"
     page.screenshot(path=os.path.join(OUT, "mobile.png"))
+    # dash button, bottom right
+    page.evaluate("window.__habit.state.player.dashCd = 0")
+    bx, by = page.evaluate("(() => { const r = document.querySelector('canvas').getBoundingClientRect(); return [r.left + 870 * r.width / 960, r.top + 458 * r.height / 540]; })()")
+    touch("touchStart", [(bx, by)])
+    touch("touchEnd", [])
+    page.wait_for_timeout(50)
+    assert page.evaluate("window.__habit.state.player.dashCd") > 0, "dash button should dash"
     # drag-to-aim: a slow up-right drag on the right half must shoot up-right, not auto-aim at the rival
     page.wait_for_timeout(600)
     pin_rival = "(() => { const s = window.__habit.state; s.bullets = s.bullets.filter(b => b.owner !== 'player'); s.player.fireCd = 0; s.player.x = 300; s.player.y = 270; s.rival.x = 500; s.rival.y = 470; })()"
@@ -177,7 +189,7 @@ SEEDED = {
         "far|0|0|0|*": {"still": 8},
         "all": {"dash:W": 10, "move:E": 10, "still": 8},
     }},
-    "rivalLevel": 2, "lastDay": "2020-01-01", "bonusReads": 0, "challengeDone": False,
+    "rivalLevel": 2, "lastDay": "2020-01-01", "bonusReads": 0, "challengeDone": False, "tutorialDone": True,
 }
 
 
@@ -241,6 +253,17 @@ def returning_player(browser, url, errors):
     assert page.evaluate("window.__habit.state.tricks.join()") == "ricochet", "pressing 2 should pick Ricochet"
 
 
+def lesson(browser, url, errors):
+    page = open_page(browser, url, errors, lesson=True, viewport={"width": 1280, "height": 720})
+    page.mouse.click(640, 360)
+    page.wait_for_timeout(300)
+    assert page.evaluate("window.__habit.state.tutorial.step") == "move", "a first run starts with the lesson"
+    page.screenshot(path=os.path.join(OUT, "lesson.png"))
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(100)
+    assert page.evaluate("window.__habit.state.tutorial.step") == "fight", "Enter skips the lesson"
+
+
 def main():
     httpd, url = serve()
     errors = []
@@ -251,6 +274,7 @@ def main():
         mobile_landscape(browser, url, errors)
         mobile_portrait(browser, url, errors)
         returning_player(browser, url, errors)
+        lesson(browser, url, errors)
         browser.close()
     httpd.shutdown()
     if errors:

@@ -2,7 +2,9 @@
 // Checkpoints every 5 levels: the next run starts from the highest checkpoint reached.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newState, createInput, step } from '../src/game.js';
+import { newState, createInput, step, settings } from '../src/game.js';
+
+settings.tutorial = false; // these tests measure the game itself, not the first-run lesson
 
 const DT = 1 / 60;
 

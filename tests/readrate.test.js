@@ -2,7 +2,9 @@
 // or reviewers never see the game's core mechanic.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newState, createInput, step } from '../src/game.js';
+import { newState, createInput, step, settings } from '../src/game.js';
+
+settings.tutorial = false; // these tests measure the game itself, not the first-run lesson
 import { CONFIG } from '../src/config.js';
 
 // Measured average is about 3.8 s; the rival's own randomness moves single runs between 3.1 and 4.3 s.

@@ -1,7 +1,9 @@
 // Tricks: run-long tools built to beat reads. Pick one after level 2, get the other at the level 5 checkpoint.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newState, createInput, step } from '../src/game.js';
+import { newState, createInput, step, settings } from '../src/game.js';
+
+settings.tutorial = false; // these tests measure the game itself, not the first-run lesson
 import { CONFIG as C } from '../src/config.js';
 import { PILLARS } from '../src/arena.js';
 
