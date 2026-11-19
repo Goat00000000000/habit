@@ -187,3 +187,39 @@ test('Overclock level 2 lasts 3 s', () => {
   step(s, input, DT);
   assert.ok(s.overclockT > 2.9);
 });
+
+test('a run that starts from a checkpoint catches up the trick picks it skipped', () => {
+  const { s, input } = begin(1);
+  winLevel(s, input);                       // clear level 2
+  input.pick = 1; step(s, input, DT);       // take Ricochet
+  assert.deepEqual(s.tricks, ['ricochet']);
+  winLevel(s, input);                       // clear level 3, now on level 4 (a checkpoint)
+  assert.equal(s.round, 4);
+  s.player.hp = 0;                          // lose on level 4
+  for (let i = 0; i < 120 && s.phase !== 'report'; i++) step(s, input, DT);
+  input.clicked = true; step(s, input, DT);
+  assert.equal(s.phase, 'runOver');
+  for (let i = 0; i < 40; i++) step(s, input, DT);
+  input.clicked = true; step(s, input, DT); // new run from the level 4 checkpoint
+  assert.equal(s.phase, 'trickPick', 'the skipped level 2 pick is offered before level 4');
+  assert.deepEqual(s.trickOffer, ['overclock', 'ricochet']);
+  input.pick = 1; step(s, input, DT);
+  assert.equal(s.phase, 'round');
+  assert.equal(s.round, 4);
+  assert.deepEqual(s.tricks, ['ricochet']);
+});
+
+test('starting from the level 8 checkpoint gives back both tricks before the fight', () => {
+  const s = newState();
+  const input = createInput();
+  s.save.checkpoint = 8;
+  input.clicked = true; step(s, input, DT);
+  assert.equal(s.phase, 'trickPick');
+  input.pick = 0; step(s, input, DT);
+  assert.equal(s.phase, 'trickPick', 'second trick');
+  assert.deepEqual(s.trickOffer, ['ricochet']);
+  input.pick = 0; step(s, input, DT);
+  assert.equal(s.phase, 'round');
+  assert.equal(s.round, 8);
+  assert.deepEqual(s.tricks.slice().sort(), ['overclock', 'ricochet']);
+});

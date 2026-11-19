@@ -226,14 +226,37 @@ function trickOffer(s) {
   return [];
 }
 
+// A run that starts from a checkpoint skipped the levels where tricks are handed out,
+// so it offers those picks first: a new trick for passing level 2, another for level 5,
+// and an upgrade for each later checkpoint below the starting level.
+function catchUpPicks(level) {
+  const queue = [];
+  if (level > 2) queue.push('new');
+  if (level > 5) queue.push('new');
+  for (let l = 6; l < level; l++) if (isCheckpoint(l)) queue.push('upgrade');
+  return queue;
+}
+
+function showNextPick(s, input) {
+  while (s.pickQueue.length) {
+    const kind = s.pickQueue.shift();
+    s.trickUpgrade = kind === 'upgrade';
+    s.trickOffer = s.trickUpgrade ? s.tricks.filter(t => trickLvl(s, t) < MAX_TRICK_LEVEL) : TRICKS.filter(t => !s.tricks.includes(t));
+    if (s.trickOffer.length) { s.phase = 'trickPick'; s.phaseT = 0; input.pick = null; return; }
+  }
+  startRound(s, input);
+}
+
 function startRun(s, input) {
-  if (s.round === 0) s.round = Math.max(0, s.save.checkpoint - 1);
+  const fromCheckpoint = s.round === 0;
+  if (fromCheckpoint) s.round = Math.max(0, s.save.checkpoint - 1);
   s.stats = { reads: 0, readsBeaten: 0, guesses: 0, guessesBeaten: 0 };
   s.runBest = 0;
   s.tricks = [];
   s.trickLevel = {};
+  s.pickQueue = fromCheckpoint ? catchUpPicks(s.round + 1) : [];
   sfx.play('start');
-  startRound(s, input);
+  showNextPick(s, input);
 }
 
 function fire(s, who, tx, ty, owner, speed = C.bulletSpeed) {
@@ -507,7 +530,8 @@ export function step(s, input, dt) {
       else { s.tricks.push(id); s.trickLevel[id] = 1; }
       s.trickOffer = [];
       sfx.play('unreadable');
-      startRound(s, input);
+      s.pickQueue ??= [];
+      showNextPick(s, input);
     }
   } else if (s.phase === 'runOver') {
     if (click && s.phaseT > 0.5) { s.round = 0; startRun(s, input); }

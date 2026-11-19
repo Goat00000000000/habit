@@ -72,6 +72,9 @@ test('reaching level 5 sets a checkpoint, and the next run starts there', () => 
   for (let i = 0; i < 40; i++) step(s, input, DT);
   input.clicked = true;
   step(s, input, DT);
+  assert.equal(s.phase, 'trickPick', 'skipped trick pick is offered first');
+  input.pick = 0;
+  step(s, input, DT);
   assert.equal(s.round, 5, 'next run starts at the checkpoint');
   assert.equal(s.stats.reads, 0, 'run stats reset');
 });
