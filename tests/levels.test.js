@@ -56,7 +56,7 @@ test('losing ends the run and records the best level', () => {
   finish(s, input, 'rival');
   assert.equal(s.phase, 'runOver');
   assert.equal(s.save.bestLevel, 4);
-  assert.equal(s.save.checkpoint, 1);
+  assert.equal(s.save.checkpoint, 4, 'level 4 is a checkpoint');
 });
 
 test('reaching level 5 sets a checkpoint, and the next run starts there', () => {
@@ -83,4 +83,11 @@ test('past level 5 the rival gets tougher and reads more, but never aims better 
   assert.ok(t9.readInterval < t5.readInterval);
   assert.ok(t9.readMove < t5.readMove);
   assert.ok(t15.readInterval >= 1.2);
+});
+
+test('checkpoints are levels 2, 4 and 5, then every 3 levels', async () => {
+  const { isCheckpoint } = await import('../src/game.js');
+  const yes = [2, 4, 5, 8, 11, 14, 17], no = [1, 3, 6, 7, 9, 10, 12, 13, 15];
+  for (const l of yes) assert.equal(isCheckpoint(l), true, `level ${l}`);
+  for (const l of no) assert.equal(isCheckpoint(l), false, `level ${l}`);
 });

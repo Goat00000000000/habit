@@ -113,7 +113,7 @@ function startRound(s, input) {
   s.activeRead = null; s.outplayed = null; s.lastMoveDir = null; s.overclockT = 0;
   s.round += 1;
   if (s.round > s.save.bestLevel) s.save.bestLevel = s.round;
-  if (s.round % C.checkpointEvery === 0) s.save.checkpoint = Math.max(s.save.checkpoint, s.round);
+  if (isCheckpoint(s.round)) s.save.checkpoint = Math.max(s.save.checkpoint, s.round);
   s.time = 0; s.sampleT = 0; s.bullets = []; s.readLabel = null; s.lastRivalShot = -9;
   s.player = fighter(240, C.arenaH / 2);
   s.tuning = tuningFor(s.round);
@@ -152,12 +152,18 @@ function tuningFor(level) {
 }
 
 // A run starts at level 1, or at the highest checkpoint reached.
-// Tricks: pick one after clearing level 2, and get what is left at each checkpoint.
+// Checkpoints: levels 2, 4 and 5, then every 3 levels. Reaching one means your next run starts there.
+export function isCheckpoint(level) {
+  const last = C.checkpoints.at(-1);
+  if (C.checkpoints.includes(level)) return true;
+  return level > last && (level - last) % C.checkpointEvery === 0;
+}
+
+// Tricks: pick one after clearing level 2, and get the other after clearing level 5.
 export const TRICKS = ['overclock', 'ricochet'];
 function trickOffer(s) {
   const left = TRICKS.filter(t => !s.tricks.includes(t));
-  if (s.round === 2 || s.round % C.checkpointEvery === 0) return left;
-  return [];
+  return s.round === 2 || s.round === 5 ? left : [];
 }
 
 function startRun(s, input) {

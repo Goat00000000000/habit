@@ -12,7 +12,8 @@ export const CONFIG = Object.freeze({
   dashSpeed: 1066,       // px/s (about 160 px per dash)
   dashCooldown: 1.2,     // s
   roundTime: 45,         // s per level
-  checkpointEvery: 5,    // levels
+  checkpoints: [2, 4, 5], // early checkpoints so new players keep progress...
+  checkpointEvery: 3,    // ...then one every 3 levels after level 5 (8, 11, 14...)
   overclockTime: 2,      // s of double fire rate after an OUTPLAYED (Overclock trick)
   sampleEvery: 0.25,     // s between habit samples
   reactionTime: 0.25,    // s rival lag
