@@ -99,3 +99,13 @@ test('an OUTPLAYED slows the rival to half speed for 1.5 s', async () => {
   for (let i = 0; i < 100; i++) step(s, input, 1 / 60);
   assert.equal(s.rivalSlowT, 0);
 });
+
+test('an OUTPLAYED does not flash the rival as if it was hit', () => {
+  const { s, input } = untilReadShot();
+  for (let i = 0; i < 60 && !s.outplayed; i++) {
+    s.bullets = s.bullets.filter(b => b.readId !== s.activeRead?.id);
+    step(s, input, 1 / 60);
+  }
+  assert.ok(s.outplayed);
+  assert.equal(s.rival.hitFlash, 0);
+});

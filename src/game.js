@@ -4,7 +4,7 @@ import { record, recordMomentum, decay, topHabits, predictability } from './habi
 import { loadSave, writeSave, welcomeLine } from './save.js';
 import { createBrain, think, readInterval } from './rival.js';
 import { clampDt, distBand, dir8 } from './util.js';
-import { PILLARS, pushOut, inPillar, pillarAt, segmentBlocked, nearCover } from './arena.js';
+import { PILLARS, pushOut, inPillar, pillarAt, segmentBlocked, nearCover, setLayoutFor } from './arena.js';
 import { createFeel, hitStop, slowMo, shake, flash, burst, ghost, updateFeel } from './feel.js';
 import { render, INK } from './ink.js';
 import { createSound } from './sound.js';
@@ -58,7 +58,7 @@ export function newState() {
     bullets: [], save, model: save.model, brain: null,
     sampleT: 0, lastAction: null, lastRivalShot: -9, readLabel: null, roundWinner: null, paused: false,
     feel: createFeel(),
-    tricks: [], trickOffer: [], overclockT: 0,
+    tricks: [], trickLevel: {}, trickOffer: [], trickUpgrade: false, overclockT: 0,
     roundStats: { dashedLeft: false, farShot: false },
     stats: { reads: 0, readsBeaten: 0, guesses: 0, guessesBeaten: 0 }, activeRead: null, outplayed: null, readSeq: 0,
     ui: { welcome: welcomeLine(save), challenge: challengeLine(save), report: null, matchLine: null },
@@ -110,6 +110,7 @@ function startRound(s, input) {
     input.aimTouch = null; input.stick = null; input.releaseAim = null; input.mouseDown = false;
   }
   s.killTimer = null;
+  setLayoutFor(s.round + 1);
   s.activeRead = null; s.outplayed = null; s.lastMoveDir = null; s.overclockT = 0; s.rivalSlowT = 0;
   s.tutorial = settings.tutorial && s.round + 1 === 1 && !s.save.tutorialDone ? { step: 'move', t: 0, moved: 0 } : null;
   s.round += 1;
@@ -214,11 +215,15 @@ export function isCheckpoint(level) {
   return level > last && (level - last) % C.checkpointEvery === 0;
 }
 
-// Tricks: pick one after clearing level 2, and get the other after clearing level 5.
+// Tricks: pick one after clearing level 2, get the other after level 5,
+// then upgrade one at every later checkpoint, up to level 3.
 export const TRICKS = ['overclock', 'ricochet'];
+const MAX_TRICK_LEVEL = 3;
+const trickLvl = (s, id) => s.trickLevel?.[id] ?? 1;
 function trickOffer(s) {
-  const left = TRICKS.filter(t => !s.tricks.includes(t));
-  return s.round === 2 || s.round === 5 ? left : [];
+  if (s.round === 2 || s.round === 5) { s.trickUpgrade = false; return TRICKS.filter(t => !s.tricks.includes(t)); }
+  if (s.round > 5 && isCheckpoint(s.round)) { s.trickUpgrade = true; return s.tricks.filter(t => trickLvl(s, t) < MAX_TRICK_LEVEL); }
+  return [];
 }
 
 function startRun(s, input) {
@@ -226,6 +231,7 @@ function startRun(s, input) {
   s.stats = { reads: 0, readsBeaten: 0, guesses: 0, guessesBeaten: 0 };
   s.runBest = 0;
   s.tricks = [];
+  s.trickLevel = {};
   sfx.play('start');
   startRound(s, input);
 }
@@ -369,7 +375,7 @@ function resolveRead(s) {
     if (!r.lesson) s.stats.readsBeaten += 1;
     s.outplayed = { t: 0, text: 'OUTPLAYED' };
     s.rivalSlowT = C.outplayedSlow.time; // it was wrong-footed: punish it
-    if (s.tricks.includes('overclock')) s.overclockT = C.overclockTime;
+    if (s.tricks.includes('overclock')) s.overclockT = C.overclockTime + trickLvl(s, 'overclock') - 1; // 2, 3 or 4 s
   }
   s.brain.sinceRead = -2; // the rival needs a moment after being outplayed
   slowMo(s.feel, 0.3, 0.35);
@@ -377,7 +383,6 @@ function resolveRead(s) {
   const dx = s.rival.x - s.player.x, dy = s.rival.y - s.player.y, l = Math.hypot(dx, dy) || 1;
   s.rival.x = Math.max(C.radius, Math.min(C.arenaW - C.radius, s.rival.x + dx / l * 18));
   s.rival.y = Math.max(C.radius, Math.min(C.arenaH - C.radius, s.rival.y + dy / l * 18));
-  s.rival.hitFlash = 0.1;
   sfx.play(r.guess ? 'unreadable' : 'outplayed');
 }
 
@@ -386,13 +391,13 @@ function updateBullets(s, dt) {
   for (const b of s.bullets) {
     b.x += b.vx * dt; b.y += b.vy * dt;
     const color = b.owner === 'player' ? COLORS.player : COLORS.rival;
-    const canBounce = b.owner === 'player' && !b.bounced && s.tricks.includes('ricochet');
+    const canBounce = b.owner === 'player' && s.tricks.includes('ricochet') && (b.bounces ?? 0) < trickLvl(s, 'ricochet');
     const pillar = b.ghost ? null : pillarAt(b.x, b.y);
     if (pillar && canBounce) {
       // Ricochet: step back out and flip the axis whose face was crossed.
       const px = b.x - b.vx * dt, py = b.y - b.vy * dt;
       if (px <= pillar.x || px >= pillar.x + pillar.w) b.vx = -b.vx; else b.vy = -b.vy;
-      b.x = px; b.y = py; b.bounced = true;
+      b.x = px; b.y = py; b.bounces = (b.bounces ?? 0) + 1;
       burst(s.feel, b.x, b.y, color, 4, 100);
       keep.push(b);
       continue;
@@ -402,7 +407,7 @@ function updateBullets(s, dt) {
     if ((outX || outY) && canBounce) {
       if (outX) { b.vx = -b.vx; b.x = b.x < 0 ? -b.x : 2 * C.arenaW - b.x; }
       if (outY) { b.vy = -b.vy; b.y = b.y < 0 ? -b.y : 2 * C.arenaH - b.y; }
-      b.bounced = true;
+      b.bounces = (b.bounces ?? 0) + 1;
       burst(s.feel, b.x, b.y, color, 4, 100);
       keep.push(b);
       continue;
@@ -495,7 +500,10 @@ export function step(s, input, dt) {
     if (pick === null && click && s.phaseT > 0.3) pick = input.mouse.x < C.arenaW / 2 ? 0 : 1;
     input.pick = null;
     if (pick !== null && pick !== undefined) {
-      s.tricks.push(s.trickOffer.at(Math.min(pick, s.trickOffer.length - 1)));
+      const id = s.trickOffer.at(Math.min(pick, s.trickOffer.length - 1));
+      s.trickLevel ??= {};
+      if (s.trickUpgrade) s.trickLevel[id] = trickLvl(s, id) + 1;
+      else { s.tricks.push(id); s.trickLevel[id] = 1; }
       s.trickOffer = [];
       sfx.play('unreadable');
       startRound(s, input);

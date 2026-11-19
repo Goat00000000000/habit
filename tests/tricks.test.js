@@ -145,3 +145,45 @@ test('without Ricochet shots stop at walls and pillars', () => {
   step(s, input, DT);
   assert.equal(s.bullets.filter(b => b.owner === 'player').length, 0);
 });
+
+test('once both tricks are owned, later checkpoints offer upgrades, up to level 3', () => {
+  const { s, input } = begin(7);
+  s.tricks = ['overclock', 'ricochet'];
+  s.trickLevel = { overclock: 1, ricochet: 1 };
+  assert.equal(s.round, 8);
+  winLevel(s, input);
+  assert.equal(s.phase, 'trickPick');
+  assert.deepEqual(s.trickOffer, ['overclock', 'ricochet']);
+  assert.equal(s.trickUpgrade, true);
+  input.pick = 1; step(s, input, DT);
+  assert.equal(s.trickLevel.ricochet, 2);
+  s.trickLevel.ricochet = 3;
+  s.round = 11; startNext(s, input);
+  assert.deepEqual(s.trickOffer, ['overclock'], 'maxed tricks are not offered');
+});
+
+function startNext(s, input) { winLevel(s, input); }
+
+test('Ricochet level 2 bounces twice', () => {
+  const { s, input } = begin(2);
+  s.tricks = ['ricochet']; s.trickLevel = { ricochet: 2 };
+  s.player.hp = 99; s.rival.hp = 99; s.rival.x = 900; s.rival.y = 500;
+  shotAt(s, 5, 60, -520, 0);
+  step(s, input, DT);
+  s.bullets[0].x = C.arenaW - 2;
+  step(s, input, DT);
+  assert.equal(s.bullets.filter(b => b.owner === 'player').length, 1, 'second bounce');
+  s.bullets[0].x = 3; s.bullets[0].vx = -520;
+  step(s, input, DT);
+  assert.equal(s.bullets.filter(b => b.owner === 'player').length, 0, 'gone after two bounces');
+});
+
+test('Overclock level 2 lasts 3 s', () => {
+  const { s, input } = begin(2);
+  s.tricks = ['overclock']; s.trickLevel = { overclock: 2 };
+  s.player.hp = 99; s.rival.hp = 99;
+  s.activeRead = { id: 99, firedAt: s.time, hit: false, guess: false };
+  s.bullets = [];
+  step(s, input, DT);
+  assert.ok(s.overclockT > 2.9);
+});

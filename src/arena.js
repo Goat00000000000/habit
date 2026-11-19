@@ -1,10 +1,23 @@
-// Arena geometry: three square pillars that block movement, bullets and line of sight.
-const S = 56;
-export const PILLARS = Object.freeze([
-  { x: 330 - S / 2, y: 150 - S / 2, w: S, h: S },
-  { x: 480 - S / 2, y: 270 - S / 2, w: S, h: S },
-  { x: 630 - S / 2, y: 390 - S / 2, w: S, h: S },
-]);
+// Arena geometry: pillars that block movement, bullets and line of sight.
+// Each level uses one of six layouts, so the arena (and the habits it creates) changes every level.
+// A layout is a list of [centre x, centre y, width, height]; spawns at (240, 270) and (720, 270) stay clear.
+const RAW = [
+  [[330, 150, 56, 56], [480, 270, 56, 56], [630, 390, 56, 56]],          // diagonal
+  [[480, 130, 48, 96], [480, 410, 48, 96]],                              // gate: open middle lane
+  [[360, 170, 48, 48], [600, 170, 48, 48], [360, 370, 48, 48], [600, 370, 48, 48]], // square
+  [[480, 270, 200, 36], [480, 110, 40, 40], [480, 430, 40, 40]],         // wall
+  [[380, 120, 44, 44], [560, 200, 44, 44], [400, 360, 44, 44], [580, 430, 44, 44]], // scatter
+  [[360, 270, 40, 140], [600, 270, 40, 140]],                            // columns
+];
+export const LAYOUTS = RAW.map(l => l.map(([cx, cy, w, h]) => Object.freeze({ x: cx - w / 2, y: cy - h / 2, w, h })));
+
+// The pillars in play right now. One live array, swapped in place at the start of each level.
+export const PILLARS = [...LAYOUTS[0]];
+
+export function setLayoutFor(level) {
+  PILLARS.length = 0;
+  PILLARS.push(...LAYOUTS.at((Math.max(1, level) - 1) % LAYOUTS.length));
+}
 
 export function inPillar(x, y, pad = 0) {
   return PILLARS.some(p => x > p.x - pad && x < p.x + p.w + pad && y > p.y - pad && y < p.y + p.h + pad);

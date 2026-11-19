@@ -232,31 +232,39 @@ function drawOutplayed(ctx, s) {
 }
 
 // ---------- tricks ----------
+const ROMAN = ['', 'I', 'II', 'III'];
 const TRICK_INFO = {
-  overclock: { seal: '速', name: 'Overclock', lines: ['Beat a read and you fire', 'twice as fast for 2 seconds.'] },
-  ricochet: { seal: '跳', name: 'Ricochet', lines: ['Your shots bounce once', 'off walls and pillars.'] },
+  overclock: { seal: '速', name: 'Overclock', lines: n => ['Beat a read and you fire', `twice as fast for ${n + 1} seconds.`] },
+  ricochet: { seal: '跳', name: 'Ricochet', lines: n => [`Your shots bounce ${['', 'once', 'twice', 'three times'].at(n)}`, 'off walls and pillars.'] },
 };
 
 function trickPickScreen(ctx, s, input) {
   sheet(ctx);
   const one = s.trickOffer.length === 1;
-  write(ctx, one ? 'A new trick' : 'Choose a trick', 84, 96, 42, { font: BRUSH });
-  write(ctx, one ? 'You reached a checkpoint. It is yours for the rest of the run.' : 'It lasts for the rest of this run.', 86, 134, 16, { color: INK.inkSoft });
+  const up = s.trickUpgrade;
+  write(ctx, up ? (one ? 'Upgrade a trick' : 'Upgrade a trick') : one ? 'A new trick' : 'Choose a trick', 84, 96, 42, { font: BRUSH });
+  write(ctx, up ? 'You reached a checkpoint. Make one of your tricks stronger.' : one ? 'You reached a checkpoint. It is yours for the rest of the run.' : 'It lasts for the rest of this run.', 86, 134, 16, { color: INK.inkSoft });
   s.trickOffer.forEach((id, i) => {
     const t = TRICK_INFO[id];
+    const lvl = up ? (s.trickLevel?.[id] ?? 1) + 1 : 1;
     const x = one ? 84 : 84 + i * 440;
     roughRect(ctx, x, 176, 380, 236, INK.ink, 1.6, seeded(70 + i));
     seal(ctx, x + 56, 236, 54, t.seal, { color: INK.ink, rot: -0.06 + i * 0.1 });
-    write(ctx, t.name, x + 104, 236, 34, { font: BRUSH });
-    write(ctx, t.lines[0], x + 32, 318, 18);
-    write(ctx, t.lines[1], x + 32, 346, 18);
+    write(ctx, lvl > 1 ? `${t.name} ${ROMAN.at(lvl)}` : t.name, x + 104, 236, 34, { font: BRUSH });
+    const [l1, l2] = t.lines(lvl);
+    write(ctx, l1, x + 32, 318, 18);
+    write(ctx, l2, x + 32, 346, 18);
     if (!one) write(ctx, input.touch ? (i ? 'tap right' : 'tap left') : `press ${i + 1}`, x + 32, 388, 14, { color: INK.inkSoft });
   });
   cta(ctx, one ? `${input.touch ? 'Tap' : 'Click'} to take it` : `${input.touch ? 'Tap a side' : 'Click a side'} to choose`, 84, 470);
 }
 
 function drawTricks(ctx, s) {
-  s.tricks.forEach((id, i) => seal(ctx, 52 + i * 30, 112, 22, TRICK_INFO[id].seal, { color: INK.ink, rot: -0.05 }));
+  s.tricks.forEach((id, i) => {
+    seal(ctx, 52 + i * 44, 112, 22, TRICK_INFO[id].seal, { color: INK.ink, rot: -0.05 });
+    const lvl = s.trickLevel?.[id] ?? 1;
+    if (lvl > 1) write(ctx, ROMAN.at(lvl), 66 + i * 44, 116, 13, { color: INK.ink });
+  });
 }
 
 function drawOverclock(ctx, s, t) {
@@ -327,6 +335,25 @@ function drawDashButton(ctx, s, input) {
   ctx.strokeStyle = INK.ink; ctx.lineWidth = 2.5; ctx.stroke();
   write(ctx, 'dash', b.x, b.y + 1, 20, { align: 'center', font: BRUSH });
   ctx.restore();
+}
+
+// Health right under each fighter, where your eyes already are mid-fight.
+function hpDots(ctx, f, hp, max, color) {
+  const gap = 12, x0 = f.x - ((max - 1) * gap) / 2, y = f.y + C.radius + 13;
+  for (let i = 0; i < max; i++) {
+    blob(ctx, x0 + i * gap, y, 4.4, 200 + i, 0);
+    if (i < hp) { ctx.fillStyle = color; ctx.fill(); } else { ctx.strokeStyle = color; ctx.globalAlpha = 0.5; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1; }
+  }
+}
+
+// On your last hit point the edges of the paper pulse dark red.
+function lastHitWarning(ctx, s, t) {
+  if (s.phase !== 'round' || s.player.hp !== 1) return;
+  const a = 0.18 + 0.1 * Math.sin(t * 6);
+  const g = ctx.createRadialGradient(C.arenaW / 2, C.arenaH / 2, C.arenaH * 0.35, C.arenaW / 2, C.arenaH / 2, C.arenaW * 0.62);
+  g.addColorStop(0, 'rgba(179,20,28,0)');
+  g.addColorStop(1, `rgba(179,20,28,${a})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, C.arenaW, C.arenaH);
 }
 
 function drawSticks(ctx, input) {
@@ -428,6 +455,8 @@ export function render(ctx, s, input) {
   drawReadTarget(ctx, s);
   drawOverclock(ctx, s, t);
   drawPlayer(ctx, s.player, t);
+  hpDots(ctx, s.player, s.player.hp, C.hp, INK.ink);
+  hpDots(ctx, s.rival, s.rival.hp, s.rival.maxHp ?? C.hp, INK.red);
   drawRival(ctx, s.rival, t);
   if (s.rivalSlowT > 0) {
     // slowed: ink drips under the rival
@@ -437,6 +466,7 @@ export function render(ctx, s, input) {
   }
   drawFeel(s.feel, ctx, C.arenaW, C.arenaH);
   ctx.restore();
+  lastHitWarning(ctx, s, t);
   drawRead(ctx, s);
   drawOutplayed(ctx, s);
   drawHud(ctx, s);
