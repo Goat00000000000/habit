@@ -4,6 +4,17 @@ import { CONFIG as C } from './config.js';
 import { PILLARS } from './arena.js';
 import { cameraOffset, drawFeel } from './feel.js';
 
+// One line summing up the run for the run-over screen. Never prints "0 of 0".
+export function runSummary({ readsBeaten, reads, guessesBeaten, guesses }) {
+  const n = (count, word) => (count === 1 ? word : word.endsWith('s') ? word + 'es' : word + 's');
+  const readPart = `beat ${readsBeaten} of ${reads} ${n(reads, 'read')}`;
+  const guessPart = `dodged ${guessesBeaten} of ${guesses} ${n(guesses, 'guess')}`;
+  if (reads > 0 && guesses > 0) return `This run you ${readPart} and ${guessPart}.`;
+  if (reads > 0) return `This run you ${readPart}.`;
+  if (guesses > 0) return `It never read you this run. You ${guessPart}.`;
+  return 'It never read you this run.';
+}
+
 export const INK = {
   paper: '#e4e1d8',
   paperShade: '#d3cfc3',
@@ -471,7 +482,7 @@ function runOverScreen(ctx, s, input) {
   write(ctx, `You reached level ${s.ui.runLevel}. Your best is level ${s.save.bestLevel}.`, 88, 176, 18);
   write(ctx, (s.ui.matchLine ?? '').replace(/^"/, '\u201C').replace(/"$/, '\u201D'), 88, 250, 24, { color: INK.red, font: BRUSH });
   write(ctx, "I'll study this tonight. Come back tomorrow.", 88, 292, 17, { color: INK.red, font: BRUSH, alpha: 0.8 });
-  write(ctx, `This run you beat ${s.stats.readsBeaten} of ${s.stats.reads} reads and dodged ${s.stats.guessesBeaten} of ${s.stats.guesses} guesses.`, 88, 352, 15, { color: INK.inkSoft });
+  write(ctx, runSummary(s.stats), 88, 352, 15, { color: INK.inkSoft });
   cta(ctx, `${input.touch ? 'Tap' : 'Click'} to try again from level ${s.save.checkpoint}`, 88, 440);
 }
 
