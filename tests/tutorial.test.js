@@ -99,3 +99,16 @@ test('after the lesson is done, level 1 is a normal fight', () => {
   step(s, input, DT);
   assert.equal(s.tutorial, null);
 });
+
+test('the lesson has no pillars, and level 1 pillars appear when the fight starts', async () => {
+  const { PILLARS, LAYOUTS } = await import('../src/arena.js');
+  const { s, input } = firstRun();
+  assert.equal(s.tutorial.step, 'move');
+  assert.equal(PILLARS.length, 0, 'open floor: lesson text never sits on a pillar and lesson shots never hit one');
+  input.skip = true; frames(s, input, 2);
+  assert.equal(s.tutorial.step, 'fight');
+  assert.deepEqual([...PILLARS], [...LAYOUTS[0]], 'the real fight uses the normal level 1 layout');
+  for (const f of [s.player, s.rival]) {
+    assert.ok(!PILLARS.some(p => f.x > p.x - C.radius && f.x < p.x + p.w + C.radius && f.y > p.y - C.radius && f.y < p.y + p.h + C.radius), 'no fighter is stuck inside a pillar');
+  }
+});

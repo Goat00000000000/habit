@@ -19,6 +19,11 @@ export function setLayoutFor(level) {
   PILLARS.push(...LAYOUTS.at((Math.max(1, level) - 1) % LAYOUTS.length));
 }
 
+// The first-run lesson is played on open floor.
+export function clearPillars() {
+  PILLARS.length = 0;
+}
+
 export function inPillar(x, y, pad = 0) {
   return PILLARS.some(p => x > p.x - pad && x < p.x + p.w + pad && y > p.y - pad && y < p.y + p.h + pad);
 }

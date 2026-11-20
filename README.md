@@ -30,13 +30,17 @@ The rival watches what you do: where you dodge when shot at, which way you move,
 
 - **Level 1 is the confidence level.** I wanted about 90% of new players to win it so nobody quits in the first minute. My first build was far too hard: a simulated new player won only 4% of level 1. I added a per-level difficulty curve and tuned level 1 to about 90%.
 - **Endless levels instead of best of 5.** In playtesting I won every match, because best of 5 ended before the hard rounds. A level ladder lets good players reach the real difficulty.
-- **Harder by reading, not by aiming.** Past level 5 the rival never aims better. It gets tougher (more HP, more dodges) and smarter: it reads more often and commits on less evidence. An aimbot feels unfair. A rival that knows you feels personal.
+- **Harder by reading, not by aiming.** Past level 5 the rival never aims better. It gets tougher (more HP, more dodges) and smarter: it reads more often and commits on less evidence. A rival with perfect aim feels unfair, while one that knows your habits feels personal.
 - **Reads must actually happen.** In my own playtests the rival read me only twice in 7 levels, so reviewers would never see the core mechanic. I measured why (the rival only tried a read when its gun was ready, and was rarely confident against a player who mixes it up), then added momentum reads and honest GUESSes. A skilled-style player now sees a READ or GUESS about every 4 seconds, up from every 6.
 - **Fair reads.** Every read is telegraphed 0.3 s early with text and a target ring, and beating one is rewarded with OUTPLAYED and a rival slowed to half speed for 1.5 s.
 
+## Playtest
+
+Ten friends played the live build, some on PC and some on phones. Most reached level 5 easily and two got to level 8. Everyone understood the game without me explaining it. Phone players had trouble with the controls, so I added the on-screen dash button and a clearer health display. What they liked most was the competition: beating an AI that is trying to read you.
+
 ## How I used AI
 
-I developed the concept with Claude (Anthropic), then shaped it through my own playtesting: I made level 1 a confidence level, replaced best of 5 with an endless ladder, and made reads actually happen after the AI barely read me in my own runs. Claude wrote most of the code and tests under my direction, and I playtested every build.
+I developed the concept with Claude (Anthropic), and Claude wrote most of the code and tests. The design decisions after that were mine, made from playing every build and from playtests with ten friends. I made level 1 easy enough that about 90% of players win it, replaced best of 5 with an endless ladder and checkpoints, picked Overclock and Ricochet as the tricks and cut Bait, slowed the rival after an OUTPLAYED, gave every level its own pillar layout, chose the ink duel art direction and the samurai sounds, and added the phone dash button and a clearer health display after my friends struggled with the controls.
 
 The AI inside the game is not an LLM. It is a small pattern model (counts of what you do in each situation, with fallbacks when data is thin) that runs entirely in the browser, so it is explainable and has no server or API key.
 

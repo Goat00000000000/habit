@@ -4,7 +4,7 @@ import { record, recordMomentum, decay, topHabits, predictability } from './habi
 import { loadSave, writeSave, welcomeLine } from './save.js';
 import { createBrain, think, readInterval } from './rival.js';
 import { clampDt, distBand, dir8 } from './util.js';
-import { PILLARS, pushOut, inPillar, pillarAt, segmentBlocked, nearCover, setLayoutFor } from './arena.js';
+import { PILLARS, pushOut, inPillar, pillarAt, segmentBlocked, nearCover, setLayoutFor, clearPillars } from './arena.js';
 import { createFeel, hitStop, slowMo, shake, flash, burst, ghost, updateFeel } from './feel.js';
 import { render, INK } from './ink.js';
 import { createSound } from './sound.js';
@@ -110,9 +110,10 @@ function startRound(s, input) {
     input.aimTouch = null; input.stick = null; input.releaseAim = null; input.mouseDown = false;
   }
   s.killTimer = null;
-  setLayoutFor(s.round + 1);
   s.activeRead = null; s.outplayed = null; s.lastMoveDir = null; s.overclockT = 0; s.rivalSlowT = 0;
   s.tutorial = settings.tutorial && s.round + 1 === 1 && !s.save.tutorialDone ? { step: 'move', t: 0, moved: 0 } : null;
+  // The lesson is played on open floor, so its text never sits on a pillar; the pillars arrive with the real fight.
+  if (s.tutorial) clearPillars(); else setLayoutFor(s.round + 1);
   s.round += 1;
   if (s.round > s.save.bestLevel) s.save.bestLevel = s.round;
   if (isCheckpoint(s.round)) s.save.checkpoint = Math.max(s.save.checkpoint, s.round);
@@ -172,6 +173,8 @@ function lessonNext(s, step) {
 function startFight(s) {
   s.tutorial.step = 'fight';
   s.tutorial.fightT = 0;
+  setLayoutFor(s.round);
+  for (const f of [s.player, s.rival]) Object.assign(f, pushOut(f.x, f.y, C.radius));
   s.save.tutorialDone = true;
   writeSave(safeStorage(), s.save);
   s.time = 0; s.sampleT = 0; s.bullets = []; s.activeRead = null; s.readLabel = null;

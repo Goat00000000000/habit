@@ -306,16 +306,48 @@ const LESSON = {
 };
 const ORDER = ['move', 'shoot', 'dash', 'read', 'beaten'];
 
+// A paper card behind lesson text, so the words never sit on top of a pillar.
+function lessonCard(ctx, cx, top, w, h, alpha = 1) {
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.fillStyle = INK.paper;
+  ctx.globalAlpha *= 0.94;
+  ctx.fillRect(cx - w / 2, top, w, h);
+  ctx.restore();
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  brushLine(ctx, cx - w / 2, top, cx + w / 2, top, 2.5, INK.ink);
+  brushLine(ctx, cx - w / 2, top + h, cx + w / 2, top + h, 2.5, INK.ink);
+  ctx.restore();
+}
+
+function textWidth(ctx, str, size, font = SERIF) {
+  ctx.save();
+  ctx.font = `400 ${size}px ${font}`;
+  const w = ctx.measureText(str).width;
+  ctx.restore();
+  return w;
+}
+
 function drawLesson(ctx, s, input) {
   const L = s.tutorial;
   if (!L) return;
   if (L.step === 'fight') {
-    if (L.fightT < 2) write(ctx, 'Now beat it.', C.arenaW / 2, 120, 40, { align: 'center', font: BRUSH, alpha: Math.min(1, 2 - L.fightT) });
+    if (L.fightT < 2) {
+      const a = Math.min(1, 2 - L.fightT);
+      lessonCard(ctx, C.arenaW / 2, 88, textWidth(ctx, 'Now beat it.', 40, BRUSH) + 80, 64, a);
+      write(ctx, 'Now beat it.', C.arenaW / 2, 120, 40, { align: 'center', font: BRUSH, alpha: a });
+    }
     return;
   }
   const info = LESSON[L.step];
+  const line = input.touch ? info.touch : info.key;
+  const cardW = Math.max(textWidth(ctx, info.title, 40, BRUSH), textWidth(ctx, line, 18)) + 80;
+  lessonCard(ctx, C.arenaW / 2, 74, cardW, 116);
+  const sb = C.skipButton;
+  lessonCard(ctx, sb.x, sb.y - 15, textWidth(ctx, input.touch ? 'skip lesson' : 'skip lesson (Enter)', 15) + 40, 30);
   write(ctx, info.title, C.arenaW / 2, 104, 40, { align: 'center', font: BRUSH });
-  write(ctx, input.touch ? info.touch : info.key, C.arenaW / 2, 142, 18, { align: 'center', color: L.step === 'read' ? INK.red : INK.ink });
+  write(ctx, line, C.arenaW / 2, 142, 18, { align: 'center', color: L.step === 'read' ? INK.red : INK.ink });
   // progress: one ink dot per step
   ORDER.forEach((step, i) => {
     blob(ctx, C.arenaW / 2 - 40 + i * 20, 172, 4.5, 80 + i, 0);
