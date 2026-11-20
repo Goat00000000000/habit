@@ -253,6 +253,30 @@ def returning_player(browser, url, errors):
     assert page.evaluate("window.__habit.state.tricks.join()") == "ricochet", "pressing 2 should pick Ricochet"
 
 
+# A browser extension that swallows A/S/D on the page (what blocked WASD for a playtester) must not stop movement.
+HOSTILE_EXTENSION = """
+for (const t of ['keydown', 'keyup']) document.addEventListener(t, e => {
+  if (['KeyA', 'KeyS', 'KeyD'].includes(e.code)) e.stopImmediatePropagation();
+}, true);
+"""
+
+
+def key_blocking_extension(browser, url, errors):
+    context = browser.new_context(viewport={"width": 1280, "height": 720})
+    context.add_init_script(HOSTILE_EXTENSION)
+    context.add_init_script(SKIP_LESSON)
+    page = context.new_page()
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(url)
+    page.wait_for_function("window.__habit && window.__habit.state")
+    page.mouse.click(640, 360)
+    page.wait_for_timeout(400)
+    x0 = page.evaluate("window.__habit.state.player.x")
+    page.keyboard.down("d"); page.wait_for_timeout(500); page.keyboard.up("d")
+    assert page.evaluate("window.__habit.state.player.x") - x0 > 50, "D must move the player even when an extension swallows it"
+    context.close()
+
+
 def lesson(browser, url, errors):
     page = open_page(browser, url, errors, lesson=True, viewport={"width": 1280, "height": 720})
     page.mouse.click(640, 360)
@@ -275,6 +299,7 @@ def main():
         mobile_portrait(browser, url, errors)
         returning_player(browser, url, errors)
         lesson(browser, url, errors)
+        key_blocking_extension(browser, url, errors)
         browser.close()
     httpd.shutdown()
     if errors:

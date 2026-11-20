@@ -571,15 +571,17 @@ export function start(canvas) {
   window.addEventListener('resize', fit);
   // Read the physical key (e.code), not the letter: keyboard layouts and input tools can change e.key.
   const CODES = { KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd', ArrowUp: 'arrowup', ArrowDown: 'arrowdown', ArrowLeft: 'arrowleft', ArrowRight: 'arrowright' };
+  // Keys are read on the window in the capture phase, the first stop for every key press, so browser
+  // extensions that swallow keys on the page (a known cause of WASD not working) cannot block movement.
   window.addEventListener('keydown', e => {
     if (e.code === 'Space') { input.dashPressed = true; e.preventDefault(); return; }
     const k = CODES[e.code];
     if (k) { input.keys.add(k); e.preventDefault(); }
-  });
-  window.addEventListener('keyup', e => { const k = CODES[e.code]; if (k) input.keys.delete(k); });
+  }, true);
+  window.addEventListener('keyup', e => { const k = CODES[e.code]; if (k) input.keys.delete(k); }, true);
   window.addEventListener('blur', () => { input.keys.clear(); input.mouseDown = false; });
   canvas.addEventListener('mousemove', e => { input.mouse = toArena(e.clientX, e.clientY); });
-  window.addEventListener('pointerdown', () => sfx.unlock());
+  window.addEventListener('pointerdown', () => { sfx.unlock(); window.focus(); });
   window.addEventListener('keydown', () => sfx.unlock());
   window.addEventListener('keydown', e => {
     if (e.code === 'KeyM') toggleMute();
@@ -587,7 +589,7 @@ export function start(canvas) {
     if (e.code === 'Enter' && inLesson(s)) input.skip = true;
     if (e.code === 'Digit1') input.pick = 0;
     if (e.code === 'Digit2') input.pick = 1;
-  });
+  }, true);
   const onSkip = a => inLesson(s) && s.phase === 'round' && Math.abs(a.x - C.skipButton.x) < C.skipButton.w / 2 && Math.abs(a.y - C.skipButton.y) < C.skipButton.h / 2;
   const onDash = a => s.phase === 'round' && Math.hypot(a.x - C.dashButton.x, a.y - C.dashButton.y) < C.dashButton.r + 10;
   canvas.addEventListener('mousedown', e => {
